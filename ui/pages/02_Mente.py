@@ -1,6 +1,8 @@
 import streamlit as st
 import sys
 import re
+import tempfile
+import os
 from pathlib import Path
 
 _p = Path(__file__).resolve().parents[2]
@@ -20,25 +22,60 @@ with tab_leitura:
 
 with tab_youtube:
     st.header("Resumo de Vídeos do YouTube")
+    st.write("Cole o link do vídeo. O app tentará baixar a legenda; se não houver, ele fará a transcrição do áudio no seu PC.")
+    
     video_url = st.text_input("URL do Vídeo:", placeholder="https://www.youtube.com/watch?v=...")
     
     if st.button("📺 Extrair Leitura do Vídeo", use_container_width=True):
         if not video_url:
             st.warning("Cole uma URL.")
         else:
-            with st.spinner("Processando..."):
+            with st.spinner("Processando vídeo... (Se precisar transcrever o áudio, pode demorar alguns minutos)"):
                 try:
                     video_id = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", video_url).group(1)
+                    texto_video = ""
+                    
+                    # 1. Tenta as legendas normais
                     try:
                         from youtube_transcript_api import YouTubeTranscriptApi
                         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['pt', 'en'])
                         texto_video = " ".join([t['text'] for t in transcript])
-                        st.toast("Legendas encontradas!")
+                        st.toast("Legendas encontradas! Resumo rápido.")
                     except Exception:
-                        st.error("Vídeo sem legendas. A transcrição por áudio (Whisper) requer instalação local. Rode o projeto no seu PC via INICIAR.bat para usar esse recurso.")
-                        st.stop()
-                        
-                    prompt = f"Resuma em tópicos:\n{texto_video[:15000]}"
-                    st.markdown(f"""<div class="samurai-card" style="border-left-color: #FF0000;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>""", unsafe_allow_html=True)
+                        st.toast("Sem legendas. Iniciando transcrição por áudio (Whisper)...")
+                        # 2. Tenta baixar o áudio e transcrever
+                        try:
+                            import yt_dlp
+                            from faster_whisper import WhisperModel
+
+                            with tempfile.TemporaryDirectory() as tmpdir:
+                                ydl_opts = {
+                                    'format': 'bestaudio/best',
+                                    'outtmpl': os.path.join(tmpdir, '%(id)s.%(ext)s'),
+                                    'quiet': True,
+                                    'noplaylist': True,
+                                }
+                                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                    info = ydl.extract_info(video_url, download=True)
+                                    audio_path = os.path.join(tmpdir, f"{info['id']}.{info['ext']}")
+
+                                # Modelo "small" para não pesar o PC
+                                model = WhisperModel("small", device="cpu", compute_type="int8")
+                                segments, info = model.transcribe(audio_path, beam_size=5, language="pt")
+                                texto_video = " ".join([segment.text for segment in segments])
+                                st.toast("Transcrição concluída!")
+                        except ImportError:
+                            st.error("Bibliotecas 'yt-dlp' ou 'faster-whisper' não instaladas. Rode: pip install yt-dlp faster-whisper")
+                            st.stop()
+                        except Exception as e:
+                            st.error(f"Erro na transcrição do áudio (O FFmpeg está instalado?): {e}")
+                            st.stop()
+                    
+                    if texto_video:
+                        prompt = f"Atue como um analista. Resuma a transcrição abaixo em tópicos:\n\n{texto_video[:15000]}"
+                        resumo = ask_gemini(prompt)
+                        st.markdown(f"""<div class="samurai-card" style="border-left-color: #FF0000;"><div class="titulo">Resumo do Vídeo</div><div style="white-space: pre-wrap;">{resumo}</div></div>""", unsafe_allow_html=True)
+                    else:
+                        st.error("Não foi possível obter o texto.")
                 except Exception as e:
-                    st.error(f"Erro: {e}")
+                    st.error(f"Erro ao processar link: {e}")
