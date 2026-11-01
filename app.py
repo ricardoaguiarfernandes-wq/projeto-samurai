@@ -14,8 +14,13 @@ if str(BASE_DIR) not in sys.path:
 
 import streamlit as st
 from core.schema import init_db
+from services.auth import check_password
 
 init_db()
+
+# Bloqueia o app se a senha não estiver correta
+if not check_password():
+    st.stop()
 
 st.set_page_config(
     page_title="Projeto Samurai ⚔️",
