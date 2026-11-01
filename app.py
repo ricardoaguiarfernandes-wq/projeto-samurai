@@ -164,11 +164,12 @@ religiao = st.Page("ui/pages/08_Religiao.py", title="🕊️ Religião")
 biblia = st.Page("ui/pages/09_Biblia.py", title="📖 Bíblia")
 newsletter = st.Page("ui/pages/10_Newsletter.py", title="⚡ Newsletter")
 alimentacao = st.Page("ui/pages/11_Alimentacao.py", title="🍏 Alimentação")
+filosofia = st.Page("ui/pages/12_Filosofia.py", title="🏛️ Filosofia")
 
 pg = st.navigation(
     {
         "⚔️ Comando": [home, consistencia],
-        "🏛️ Pilares": [corpo, mente, informacao, patrimonio, descanso, autoconhecimento, religiao, biblia, newsletter, alimentacao],
+        "🏛️ Pilares": [corpo, mente, informacao, patrimonio, descanso, autoconhecimento, religiao, biblia, newsletter, alimentacao, filosofia],
     }
 )
 
