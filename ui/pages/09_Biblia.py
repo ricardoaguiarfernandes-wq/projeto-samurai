@@ -17,11 +17,60 @@ init_db()
 
 st.title("📖 Bíblia, Inglês & Filosofia")
 
+# === PATCH DE CORREÇÃO DO PLANO DE LEITURA ===
+# Verifica se o Dia 1 tem menos de 10 versículos. Se sim, o plano está quebrado.
+plano_teste = query_one("SELECT start_verse_id, end_verse_id FROM reading_plan WHERE day = 1")
+plano_corrompido = False
+
+if plano_teste:
+    if (plano_teste["end_verse_id"] - plano_teste["start_verse_id"]) < 10:
+        plano_corrompido = True
+
+if plano_corrompido:
+    with st.spinner("Corrigindo a divisão do plano de leitura (isso levará alguns segundos)..."):
+        # Limpa os planos antigos
+        execute("DELETE FROM reading_plan")
+        execute("DELETE FROM reading_progress")
+        
+        # Busca todos os versículos e recalcula o tamanho baseado no texto real
+        versiculos = query_all("SELECT id, text FROM bible_verses ORDER BY id")
+        if versiculos:
+            total_palavras = sum(len(v["text"].split()) for v in versiculos)
+            meta_diaria = total_palavras / 365
+            
+            current_day = 1
+            accumulated = 0
+            start_id = versiculos[0]["id"]
+            
+            for i, v in enumerate(versiculos):
+                palavras_v = len(v["text"].split())
+                accumulated += palavras_v
+                
+                if (accumulated >= meta_diaria and current_day < 365) or i == len(versiculos) - 1:
+                    execute("INSERT INTO reading_plan (day, start_verse_id, end_verse_id) VALUES (?, ?, ?)", (current_day, start_id, v["id"]))
+                    current_day += 1
+                    accumulated = 0
+                    if i < len(versiculos) - 1:
+                        start_id = versiculos[i + 1]["id"]
+            
+            # Preenche dias restantes
+            while current_day <= 365:
+                execute("INSERT INTO reading_plan (day, start_verse_id, end_verse_id) VALUES (?, ?, ?)", (current_day, start_id, versiculos[-1]["id"]))
+                current_day += 1
+                
+            # Cria o progresso
+            for day in range(1, 366):
+                execute("INSERT INTO reading_progress (day, completed) VALUES (?, 0)", (day,))
+                
+        st.success("Plano corrigido com sucesso!")
+        st.rerun()
+# ==============================================
+
 # Inicializa o plano caso esteja vazio
 count_prog = query_one("SELECT COUNT(*) AS c FROM reading_progress")["c"]
 if count_prog == 0:
     with st.spinner("Iniciando o plano de leitura..."):
-        setup_biblia()  # Agora a função existe e vai popular tudo!
+        setup_biblia()
     st.rerun()
 
 tab1, tab2, tab3, tab4 = st.tabs(["📖 Plano Anual", "🇺🇸 Devocional Bilíngue", "🎵 Inglês com Louvores", "🔑 Palavras-Chave (1.500)"])
@@ -45,7 +94,12 @@ with tab1:
             versiculos = query_all("SELECT book_name, chapter, verse, text FROM bible_verses WHERE id BETWEEN ? AND ? ORDER BY id", (plano["start_verse_id"], plano["end_verse_id"]))
             if versiculos:
                 primeiro = versiculos[0]
-                ref = f"{primeiro['book_name']} {primeiro['chapter']}:{primeiro['verse']}"
+                ultimo = versiculos[-1]
+                if primeiro['book_name'] == ultimo['book_name']:
+                    ref = f"{primeiro['book_name']} {primeiro['chapter']}:{primeiro['verse']} a {ultimo['chapter']}:{ultimo['verse']}"
+                else:
+                    ref = f"{primeiro['book_name']} {primeiro['chapter']}:{primeiro['verse']} a {ultimo['book_name']} {ultimo['chapter']}:{ultimo['verse']}"
+                    
                 st.markdown(f"**Leitura de hoje:** {ref}")
                 texto_limpo, texto_bruto = "", ""
                 for v in versiculos:
