@@ -132,6 +132,21 @@ hr { border-color: var(--s-red) !important; opacity: .5 !important; }
 
 st.markdown(SAMURAI_CSS, unsafe_allow_html=True)
 
+# --- CONFIGURAÇÃO PWA (APP NATIVO) ---
+import base64
+manifest_b64 = "eyJuYW1lIjogIlByb2pldG8gU2FtdXJhaSIsICJzaG9ydF9uYW1lIjogIlNhbXVyYWkiLCAic3RhcnRfdXJsIjogIi4iLCAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwgImJhY2tncm91bmRfY29sb3IiOiAiIzBCMEIwQiIsICJ0aGVtZV9jb2xvciI6ICIjOEIwMDAwIiwgImljb25zIjogW3sic3JjIjogImRhdGE6aW1hZ2UvcG5nO2Jhc2U2NCxpVkJPUncwS0dnb0FBQUFOU1VoRVVnQUFBTUFBQUFEQUNBWUFBQUJTM0d3SEFBQUFBWE5TUjBJQXJzNGM2UUFBQUFSblFVMUJBQUN4and2OFlRVUFBQUFKY0VoWmN3QUFEc01BQUE3REFjZHZxR1FBQUFESlNVUkJWSGhlN2RFeEFRQUFETU9nK1RmZG1jZ0J5RzRxQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFnTDhCd1NBQUFWUjhKNmtBQUFBQVNVVk9SSzVDWUlJPSIsICJzaXplcyI6ICIxOTJ4MTkyIiwgInR5cGUiOiAiaW1hZ2UvcG5nIn1dfQ=="
+pwa_html = f"""
+<link rel="manifest" href="data:application/json;base64,{manifest_b64}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Samurai">
+<meta name="mobile-web-app-capable" content="yes">
+"""
+st.markdown(pwa_html, unsafe_allow_html=True)
+# --------------------------------------
+
+
+
 home = st.Page("ui/pages/00_Home.py", title="🏯 Dojo", default=True)
 consistencia = st.Page("ui/pages/07_Consistencia.py", title="🎯 Consistência")
 corpo = st.Page("ui/pages/01_Corpo.py", title="💪 Corpo")
