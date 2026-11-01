@@ -4,63 +4,61 @@ from pathlib import Path
 import yfinance as yf
 import requests
 import feedparser
+import readtime
+import re
+import trafilatura
+from concurrent.futures import ThreadPoolExecutor
 
 _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
 from core.schema import init_db
+from core.database import query_all
 
 init_db()
 
-st.title("📰 Informação")
-st.caption("Mundo, Brasil, Macaé, Legislativo e Finanças.")
+st.title("📰 Informação & Notícias")
+tab_financas, tab_newsletter = st.tabs(["📈 Finanças & Notícias Diárias", "⚡ The Samurai Brief"])
 
-# --- FINANÇAS ---
-st.subheader("📈 Finanças (Tempo Real)")
-col1, col2, col3 = st.columns(3)
-tickers = {"Dólar": "BRL=X", "IBOVESPA": "^BVSP", "Bitcoin": "BTC-USD"}
-cols = [col1, col2, col3]
+with tab_financas:
+    st.subheader("Cotações (Tempo Real)")
+    col1, col2, col3 = st.columns(3)
+    tickers = {"Dólar": "BRL=X", "IBOVESPA": "^BVSP", "Bitcoin": "BTC-USD"}
+    for i, (nome, ticker) in enumerate(tickers.items()):
+        try:
+            data = yf.Ticker(ticker).history(period="1d")
+            if not data.empty:
+                preco = data['Close'].iloc[-1]
+                with [col1, col2, col3][i]:
+                    st.markdown(f"""<div class="samurai-card"><div class="titulo">{nome}</div><div class="valor">R$ {preco:,.2f}</div></div>""", unsafe_allow_html=True)
+        except: pass
 
-for i, (nome, ticker) in enumerate(tickers.items()):
+    st.divider()
+    st.subheader("🗞️ Últimas Notícias (G1)")
     try:
-        data = yf.Ticker(ticker).history(period="1d")
-        if not data.empty:
-            preco = data['Close'].iloc[-1]
-            with cols[i]:
-                st.markdown(
-                    f"""<div class="samurai-card">
-                        <div class="titulo">{nome}</div>
-                        <div class="valor">R$ {preco:,.2f}</div>
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
-    except Exception:
-        with cols[i]:
-            st.error(f"Erro ao carregar {nome}")
+        url = "https://g1.globo.com/rss/g1/"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        feed = feedparser.parse(response.content)
+        for entry in feed.entries[:5]: st.markdown(f"- [{entry.title}]({entry.link})")
+    except: st.warning("Erro ao carregar notícias.")
 
-st.divider()
-
-# --- NOTÍCIAS ---
-st.subheader("🗞️ Últimas Notícias (G1)")
-try:
-    url = "https://g1.globo.com/rss/g1/"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    response = requests.get(url, headers=headers, timeout=10)
-    response.raise_for_status() # Levanta um erro se a requisição falhar
-    
-    feed = feedparser.parse(response.content)
-    
-    if feed.entries:
-        for entry in feed.entries[:5]:
-            st.markdown(f"- [{entry.title}]({entry.link})")
+with tab_newsletter:
+    emails = query_all("SELECT * FROM newsletters_inbox ORDER BY received_at DESC LIMIT 5")
+    if not emails:
+        st.info("Nenhuma newsletter recebida ainda.")
     else:
-        st.warning("O feed de notícias está vazio no momento.")
-except requests.exceptions.RequestException:
-    st.warning("Não foi possível carregar as notícias (servidor do G1 fora do ar ou bloqueando a conexão).")
-except Exception as e:
-    st.warning("Erro inesperado ao carregar as notícias.")
-
-st.divider()
-st.subheader("⚖️ Legislativo")
-st.info("🚧 Integração com APIs do Senado, Câmara, ALERJ e Câmara de Macaé será implementada na Sprint 4.")
+        if st.button("📰 Gerar 'The Samurai Brief' do Dia (IA)", use_container_width=True):
+            with st.spinner("Resumindo newsletters..."):
+                from bs4 import BeautifulSoup
+                texto = ""
+                for e in emails[:3]:
+                    soup = BeautifulSoup(e['content'], "html.parser")
+                    texto += f"--- {e['subject']} ---\n{soup.get_text(strip=True)}\n"
+                prompt = f"Atue como editor da newsletter The Hustle. Resuma os pontos principais:\n{texto}"
+                resumo = ask_gemini(prompt)
+                st.markdown(f"""<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Edição de Hoje</div><div style="white-space: pre-wrap;">{resumo}</div></div>""", unsafe_allow_html=True)
+        
+        for e in emails:
+            with st.expander(f"✉️ {e['subject']}"):
+                st.markdown(f"<div style='max-height: 400px; overflow-y: auto;'>{e['content']}</div>", unsafe_allow_html=True)
