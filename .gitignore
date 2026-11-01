@@ -1,0 +1,24 @@
+# Ambiente Virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Dados e Banco (Banco local não deve subir)
+data/
+*.db
+*.sqlite
+
+# Configurações Locais (NUNCA suba sua chave de API)
+config.json
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Sistema
+.DS_Store
+Thumbs.db
