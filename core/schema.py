@@ -10,7 +10,14 @@ from datetime import date
 
 from core.database import execute, query_one, query_all
 
-DDL = [
+def get_ddl():
+    is_pg = False
+    try:
+        import streamlit as st
+        is_pg = "SUPABASE_URL" in st.secrets
+    except Exception: pass
+
+    ddl_base = [
     # ... (Tabelas originais mantidas) ...
     """
     CREATE TABLE IF NOT EXISTS habits (
@@ -126,7 +133,11 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(log_date);",
     "CREATE INDEX IF NOT EXISTS idx_checkins_date   ON daily_checkins(checkin_date);",
     "CREATE INDEX IF NOT EXISTS idx_expenses_date   ON expenses(expense_date);",
-]
+    ]
+
+    if is_pg:
+        return [d.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY").replace("datetime('now')", "CURRENT_TIMESTAMP") for d in ddl_base]
+    return ddl_base
 
 SEED_HABITS = [
     ("Treino calistênico", "Corpo", "Treino progressivo do dia."),
@@ -189,7 +200,7 @@ def setup_biblia():
             execute("INSERT INTO reading_progress (day, completed) VALUES (?, 0)", (day,))
 
 def init_db() -> None:
-    for ddl in DDL:
+    for ddl in get_ddl():
         execute(ddl)
 
     # Seed hábitos
