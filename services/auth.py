@@ -21,7 +21,8 @@ def check_password():
             else:
                 st.session_state["password_correct"] = False
                 time.sleep(1) # Pequena pausa para evitar ataques de força bruta
-        except Exception:
+        except Exception as e:
+            st.error(f"Erro ao ler a senha: {e}")
             st.session_state["password_correct"] = False
 
     # Se já estiver autenticado, libera o acesso
@@ -37,9 +38,10 @@ def check_password():
         type="password", 
         on_change=password_entered, 
         key="password",
-        placeholder="Digite sua senha..."
+        placeholder="Digite sua senha...",
+        help="A senha local padrão é: samurai123"
     )
     
     if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-        st.error("😕 Senha incorreta. Tente novamente.")
+        st.error("😕 Senha incorreta. Tente novamente. (Dica: use 'samurai123' no PC)")
     return False

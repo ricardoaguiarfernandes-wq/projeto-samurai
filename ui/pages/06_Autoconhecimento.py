@@ -74,3 +74,26 @@ else:
                         <b>Mentor Samurai:</b><br>{e['ai_reflection']}
                     </div>
                 </div>""", unsafe_allow_html=True)
+
+
+st.divider()
+st.subheader("💬 Converse com o Mentor Samurai")
+
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+
+for msg in st.session_state.chat_messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+if prompt := st.chat_input("Como você está se sentindo hoje?"):
+    st.session_state.chat_messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+        
+    with st.chat_message("assistant"):
+        with st.spinner("Refletindo..."):
+            resposta = ask_gemini(f"Atue como um mentor samurai. O usuario disse: '{prompt}'. Responda de forma sabia, empatica e curta.")
+            st.markdown(resposta)
+            
+    st.session_state.chat_messages.append({"role": "assistant", "content": resposta})

@@ -2,6 +2,8 @@ import streamlit as st
 import sys
 from pathlib import Path
 from datetime import date
+import pandas as pd
+import plotly.express as px
 
 _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
@@ -9,8 +11,9 @@ if str(_p) not in sys.path:
 
 from core.database import execute, query_all
 from core.schema import init_db
+from services.ai import ask_gemini
 
-init_db()  # Garante que a tabela exista antes de qualquer consulta
+init_db()
 
 st.title("💪 Corpo")
 st.caption("Treino calistênico progressivo e mobilidade.")
@@ -76,3 +79,98 @@ if nova_mob != mob_done:
         (hoje, 1 if nova_mob else 0)
     )
     st.rerun()
+
+# --- NOVO: GRÁFICO DE EVOLUÇÃO ---
+
+
+st.divider()
+st.subheader("⏱️ Cronômetro de Descanso (2:30)")
+import streamlit.components.v1 as components
+components.html(
+    """
+    <div style="text-align: center; font-family: sans-serif; color: #F2F2F2;">
+        <button onclick="startTimer()" style="padding: 10px 20px; background: #8B0000; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold;">Iniciar Descanso</button>
+        <h1 id="timer" style="font-size: 54px; margin: 15px 0; color: #8B0000;">02:30</h1>
+    </div>
+    <script>
+        let timeLeft = 150;
+        let timerId;
+        function startTimer() {
+            if(timerId) clearInterval(timerId);
+            timeLeft = 150;
+            updateDisplay();
+            timerId = setInterval(() => {
+                timeLeft--;
+                if (timeLeft < 0) {
+                    clearInterval(timerId);
+                    alert("Descanso finalizado! Volte ao treino.");
+                    timeLeft = 150;
+                }
+                updateDisplay();
+            }, 1000);
+        }
+        function updateDisplay() {
+            let m = Math.floor(timeLeft / 60);
+            let s = timeLeft % 60;
+            document.getElementById('timer').innerText = m + ":" + (s < 10 ? "0" : "") + s;
+            if(timeLeft <= 10 && timeLeft > 0) {
+                document.getElementById('timer').style.color = '#F44336';
+            } else {
+                document.getElementById('timer').style.color = '#8B0000';
+            }
+        }
+    </script>
+    """,
+    height=180
+)
+
+st.divider()
+st.subheader("🤖 Treinador de IA")
+if st.button("🪄 Gerar Ficha de Treino para Hoje", use_container_width=True):
+    with st.spinner("Analisando seu histórico..."):
+        hist = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER BY log_date DESC LIMIT 15")
+        contexto = ""
+        for h in hist:
+            contexto += f"- {h['log_date']}: {h['exercise_name']} - {h['reps']} reps\n"
+            
+        prompt = f"""Atue como um treinador de calistenia experiente. O aluno é ECTOMORFO (1,86m, 70kg), focado em hipertrofia e ganho de peso. O descanso obrigatório entre séries é de 2,5 minutos (150 segundos) para recuperação total. 
+Aqui está o histórico recente do usuário:\n{contexto}\n
+Com base nisso, sugira a ficha de treino ideal para HOJE. Foque em progressão (aumentar reps ou séries) ou descanso ativo se houver sinais de overtraining.
+Seja direto e motivador. Use tópicos."""
+        
+        ficha = ask_gemini(prompt)
+        st.markdown(f"""<div class="samurai-card" style="border-left-color: #F9A825;">
+            <div class="titulo">Ficha do Treinador</div>
+            <div style="color: #F2F2F2; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap;">{ficha}</div>
+        </div>""", unsafe_allow_html=True)
+
+st.divider()
+st.subheader("📈 Evolução de Repetições (Últimos 14 dias)")
+
+historico = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER BY log_date DESC LIMIT 50")
+
+if historico:
+    df = pd.DataFrame(historico)
+    
+    # Agrupa por data e exercício (somando os reps)
+    df_agrupado = df.groupby(['log_date', 'exercise_name'])['reps'].sum().reset_index()
+    
+    fig = px.line(
+        df_agrupado, 
+        x='log_date', 
+        y='reps', 
+        color='exercise_name',
+        markers=True,
+        color_discrete_sequence=['#8B0000', '#F9A825', '#4CAF50', '#2196F3']
+    )
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#F2F2F2'),
+        xaxis_title="Data",
+        yaxis_title="Repetições",
+        legend_title="Exercício"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Registre seus treinos para ver o gráfico de evolução.")

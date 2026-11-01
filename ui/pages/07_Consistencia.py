@@ -11,6 +11,10 @@ if str(_p) not in sys.path:
 from datetime import date, timedelta
 
 import streamlit as st
+from fpdf import FPDF
+import io
+import pandas as pd
+import plotly.express as px
 
 from core.database import execute, query_all, query_one
 from services.ai import ask_gemini
@@ -128,6 +132,64 @@ if score >= 80:
     st.error("⚠️ Risco crítico. Priorize descanso hoje. Nenhum treino vale um colapso.")
 elif score >= 60:
     st.warning("Atenção: sinais de sobrecarga. Reduza intensidade e priorize sono.")
+
+
+st.divider()
+st.subheader("📊 Histórico de Energia e Estresse (14 dias)")
+
+checkins_historico = query_all("SELECT checkin_date, energy, stress FROM daily_checkins ORDER BY checkin_date DESC LIMIT 14")
+if checkins_historico:
+    df_check = pd.DataFrame(checkins_historico)
+    # Inverte para o gráfico ficar da esquerda (mais antigo) para direita (hoje)
+    df_check = df_check.iloc[::-1]
+    
+    fig2 = px.line(
+        df_check, 
+        x='checkin_date', 
+        y=['energy', 'stress'],
+        markers=True,
+        color_discrete_sequence=['#4CAF50', '#F44336'],
+        labels={'value': 'Nível', 'variable': 'Métrica', 'checkin_date': 'Data'}
+    )
+    fig2.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#F2F2F2'),
+        legend_title=""
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.info("Faça check-ins diários para visualizar o histórico.")
+
+
+st.divider()
+st.subheader("📄 Exportar Relatório")
+if st.button("Gerar Relatório em PDF", use_container_width=True):
+    with st.spinner("Gerando PDF..."):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, "Relatorio Samurai - Consistencia", ln=True, align="C")
+        pdf.set_font("Arial", size=12)
+        
+        # Limpa emojis para não quebrar o PDF (fonte padrão do FPDF não suporta)
+        label_limpo = label.encode('ascii', 'ignore').decode('ascii')
+        
+        pdf.cell(0, 10, f"Data: {today_iso}", ln=True)
+        pdf.cell(0, 10, f"Score de Burnout: {score:.0f}/100 - {label_limpo}", ln=True)
+        pdf.cell(0, 10, f"Media de Energia: {metricas['avg_energy']:.1f}/10", ln=True)
+        pdf.cell(0, 10, f"Media de Sono: {metricas['avg_sleep']:.1f}h", ln=True)
+        pdf.cell(0, 10, f"Media de Estresse: {metricas['avg_stress']:.1f}/10", ln=True)
+        pdf.cell(0, 10, f"Taxa de Habitos: {metricas['taxa']*100:.0f}%", ln=True)
+        
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        st.download_button(
+            label="⬇️ Baixar PDF",
+            data=pdf_bytes,
+            file_name=f"relatorio_samurai_{today_iso}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
 
 st.divider()
 st.subheader("🧠 Relatório do Mentor Samurai")

@@ -22,3 +22,6 @@ config.json
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Mapas gerados (podem conter snapshot do codigo, incluindo config.json)
+PROJETO_SAMURAI*.md

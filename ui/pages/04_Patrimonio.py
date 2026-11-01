@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import date
 import yfinance as yf
 import pandas as pd
+import plotly.express as px
 
 _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
@@ -115,6 +116,38 @@ else:
     with col_t3:
         rent_total = ((total_atual - total_investido) / total_investido) * 100 if total_investido > 0 else 0
         st.metric("Rentabilidade", f"{rent_total:+.2f}%", delta=f"R$ {total_atual - total_investido:.2f}")
+
+
+    # --- NOVO: GRÁFICO DE DISTRIBUIÇÃO ---
+    st.markdown("### 🍕 Distribuição da Carteira")
+    
+    dados_pizza = []
+    for ativo in carteira_db:
+        # Recalcula o valor atual rápido para o gráfico
+        try:
+            preco = yf.Ticker(ativo['ticker']).history(period='1d')['Close'].iloc[-1]
+        except:
+            preco = ativo['average_price']
+        dados_pizza.append({
+            "Ativo": ativo['ticker'],
+            "Valor": ativo['quantity'] * preco
+        })
+        
+    if dados_pizza:
+        df_pizza = pd.DataFrame(dados_pizza)
+        fig3 = px.pie(
+            df_pizza, 
+            values='Valor', 
+            names='Ativo', 
+            hole=0.4,
+            color_discrete_sequence=px.colors.sequential.Reds_r
+        )
+        fig3.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#F2F2F2')
+        )
+        st.plotly_chart(fig3, use_container_width=True)
 
     # ==============================================================================
     # 2. CONSULTOR IA
