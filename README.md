@@ -25,3 +25,4 @@ Um Sistema Operacional Pessoal (Personal OS) focado em desenvolvimento humano, d
 2. Instale as dependências: `pip install -r requirements.txt`
 3. Crie o arquivo `config.json` com sua chave: `{"gemini_api_key": "SUA_CHAVE"}`
 4. Rode o `INICIAR.bat`.
+"# projeto-samurai" 
