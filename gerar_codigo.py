@@ -98,4 +98,4 @@ def generate() -> None:
     print(f"[OK] {len(arquivos)} arquivo(s) incluído(s) (segredos censurados).")
 
 if __name__ == "__main__":
-    generate()
+    generate()  
