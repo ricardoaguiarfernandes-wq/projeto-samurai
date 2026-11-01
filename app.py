@@ -161,14 +161,13 @@ patrimonio = st.Page("ui/pages/04_Patrimonio.py", title="💎 Patrimônio")
 descanso = st.Page("ui/pages/05_Descanso.py", title="🌿 Descanso & Lazer")
 autoconhecimento = st.Page("ui/pages/06_Autoconhecimento.py", title="🪞 Autoconhecimento")
 religiao = st.Page("ui/pages/08_Religiao.py", title="🕊️ Religião")
-biblia = st.Page("ui/pages/09_Biblia.py", title="📖 Bíblia")
 alimentacao = st.Page("ui/pages/11_Alimentacao.py", title="🍏 Alimentação")
 filosofia = st.Page("ui/pages/12_Filosofia.py", title="🏛️ Filosofia")
 
 pg = st.navigation(
     {
         "⚔️ Comando": [home, consistencia],
-        "🏛️ Pilares": [corpo, mente, informacao, patrimonio, descanso, autoconhecimento, religiao, biblia, alimentacao, filosofia],
+        "🏛️ Pilares": [corpo, mente, informacao, patrimonio, descanso, autoconhecimento, religiao, alimentacao, filosofia],
     }
 )
 
