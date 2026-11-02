@@ -1,11 +1,10 @@
 """
-criar_projeto_samurai.py — V2.6 (Blindagem do Webhook de Email e Integração ao Brief)
+criar_projeto_samurai.py — V2.9 (Validação de Payload e Limpeza de Dados)
 
 ENTREGAS:
-1. SEGURANÇA: Adiciona verificação X-Webhook-Token na rota /webhook/email.
-2. DB: Remove o HTML bruto e salva apenas texto limpo no banco.
-3. LÓGICA: Impede e-mails duplicados.
-4. INTEGRAÇÃO: O endpoint /api/brief agora lê os últimos e-mails e envia para a IA.
+1. API: Ignora e bloqueia e-mails com campos "undefined" ou vazios.
+2. API: Adiciona uma rotina de limpeza para apagar registros corrompidos no banco.
+3. DB: Roda a limpeza no boot.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -30,130 +29,68 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-# ============================================================
-# 1. API — Blindagem do Webhook e Integração ao Brief
-# ============================================================
-def fix_api_webhook_email() -> None:
+def fix_api_webhook_validation() -> None:
     p = BASE / "api_samurai.py"
     txt = read(p)
 
-    if "X-Webhook-Token" in txt:
-        print("[SKIP] api_samurai.py — webhook já blindado.")
+    if "Se o payload vier com 'undefined'" in txt:
+        print("[SKIP] api_samurai.py — validação já existe.")
         return
 
-    # 1.1 Atualizar a rota de email
-    old_webhook = '''@app.post("/webhook/email")
-async def receive_email(payload: EmailPayload):
-    try:
-        execute(
-            "INSERT INTO newsletters_inbox (subject, sender, content) VALUES (?, ?, ?)",
-            (payload.subject, payload.sender, payload.content),
-        )
-        return {"status": "success", "message": "Newsletter salva!"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}'''
-
-    new_webhook = '''@app.post("/webhook/email")
-async def receive_email(payload: EmailPayload, x_webhook_token: str = Header(None)):
-    # 1. Segurança
-    expected_token = os.environ.get("WEBHOOK_EMAIL_TOKEN", "samurai-secret-email")
-    if x_webhook_token != expected_token:
-        raise HTTPException(status_code=401, detail="Token de webhook invalido.")
-
-    try:
+    # 1. Adicionar validação na rota do webhook
+    old_webhook = '''    try:
         # 2. Evitar duplicatas e limpar HTML
         import re
         from bs4 import BeautifulSoup
         
         # Limpa o HTML para texto puro
         soup = BeautifulSoup(payload.content, "html.parser")
-        clean_content = soup.get_text(separator="\\n", strip=True)
-        
-        # Verifica se já existe (baseado no assunto e remetente)
-        existe = query_one(
-            "SELECT id FROM newsletters_inbox WHERE subject = ? AND sender = ?",
-            (payload.subject, payload.sender)
-        )
-        
-        if existe:
-            return {"status": "ignored", "message": "Email duplicado."}
+        clean_content = soup.get_text(separator="\\n", strip=True)'''
 
-        # 3. Salva no banco
-        execute(
-            "INSERT INTO newsletters_inbox (subject, sender, content) VALUES (?, ?, ?)",
-            (payload.subject, payload.sender, clean_content),
-        )
-        return {"status": "success", "message": "Newsletter limpa e salva!"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}'''
+    new_webhook = '''    try:
+        # 2. Evitar duplicatas e limpar HTML
+        import re
+        from bs4 import BeautifulSoup
+        
+        # Valida se os campos não vieram quebrados do Pipedream
+        if not payload.subject or payload.subject.strip().lower() == "undefined":
+            return {"status": "ignored", "message": "Payload inválido (subject undefined)"}
+            
+        # Limpa o HTML para texto puro
+        soup = BeautifulSoup(payload.content, "html.parser")
+        clean_content = soup.get_text(separator="\\n", strip=True)'''
 
     if old_webhook in txt:
         txt = txt.replace(old_webhook, new_webhook, 1)
     else:
-        print("[AVISO] api_samurai.py — rota de email antiga não encontrada.")
+        print("[AVISO] api_samurai.py — bloco de webhook não encontrado.")
 
-    # 1.2 Injetar os e-mails no prompt do Brief
-    old_prompt = '''    prompt = f"""Voce e o Mentor Samurai, sistema operacional pessoal do Ricardo.
-Data: {today_iso}.
-Dados do dia:'''
+    # 2. Adicionar limpeza no boot (init_db)
+    old_init = '''try:
+    init_db()
+except Exception as _e:
+    print(f"[AVISO] init_db falhou no boot: {_e}")'''
 
-    new_prompt = '''    # Busca as notícias do dia para incluir no brief
-    try:
-        emails = query_all("SELECT subject, content FROM newsletters_inbox ORDER BY received_at DESC LIMIT 3")
-        noticias_ctx = "\\n".join([f"[{e['subject']}] {e['content'][:1000]}" for e in emails])
-    except Exception:
-        noticias_ctx = "Nenhuma noticia recebida hoje."
+    new_init = '''try:
+    init_db()
+    # Limpa registros corrompidos antigos
+    execute("DELETE FROM newsletters_inbox WHERE subject = 'undefined' OR subject IS NULL")
+except Exception as _e:
+    print(f"[AVISO] init_db falhou no boot: {_e}")'''
 
-    prompt = f"""Voce e o Mentor Samurai, sistema operacional pessoal do Ricardo.
-Data: {today_iso}.
-
-NOTICIAS DE HOJE (Newsletters):
-{noticias_ctx}
-
-Dados do dia:'''
-
-    if old_prompt in txt:
-        txt = txt.replace(old_prompt, new_prompt, 1)
+    if old_init in txt:
+        txt = txt.replace(old_init, new_init, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] api_samurai.py — bloco do prompt do brief não encontrado.")
+        print("[AVISO] api_samurai.py — bloco init_db não encontrado.")
 
-# ============================================================
-# 2. CRIAR SCRIPT PARA O POWER AUTOMATE
-# ============================================================
-def create_power_automate_guide() -> None:
-    p = BASE / "power_automate.json"
-    if p.exists():
-        print("[SKIP] power_automate.json já existe.")
-        return
-    
-    conteudo = '''{
-  "instrucoes": "No Power Automate, crie um fluxo de 'Quando um novo e-mail chegar'. Adicione uma ação HTTP POST para o seu endpoint.",
-  "URL": "https://samurai-webhook.onrender.com/webhook/email",
-  "Method": "POST",
-  "Headers": {
-    "Content-Type": "application/json",
-    "X-Webhook-Token": "samurai-secret-email"
-  },
-  "Body": {
-    "subject": "@{triggerOutputs()?['body/subject']}",
-    "sender": "@{triggerOutputs()?['body/from']}",
-    "content": "@{triggerOutputs()?['body/body']}"
-  }
-}'''
-    p.write_text(conteudo, encoding="utf-8")
-    print(f"[OK] {p.name} (guia para configurar o Power Automate)")
-
-# ============================================================
-# SYNC GIT
-# ============================================================
 def sync_git() -> None:
     print("\n" + "=" * 60)
     print("SINCRONIZANDO COM O GITHUB")
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: blinda webhook de email, limpa html e integra ao brief diario"])
+    _git_run_safe(["commit", "-m", "fix: valida payload do webhook e limpa undefined do banco"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -161,34 +98,21 @@ def sync_git() -> None:
     else:
         print(f"[ERRO] Push falhou:\n{r.stderr}")
 
-# ============================================================
-# MAIN
-# ============================================================
 def aplicar() -> None:
     print("=" * 60)
-    print("V2.6 — BLINDAGEM E INTEGRAÇÃO DO WEBHOOK DE E-MAIL")
+    print("V2.9 — VALIDAÇÃO DE WEBHOOK E LIMPEZA")
     print("=" * 60)
 
-    etapas = [
-        ("Blindar API e integrar brief (api_samurai.py)", fix_api_webhook_email),
-        ("Gerar guia do Power Automate", create_power_automate_guide),
-    ]
-
-    for i, (label, fn) in enumerate(etapas, 1):
-        print(f"\n[{i}/{len(etapas)}] {label}")
-        fn()
-
+    fix_api_webhook_validation()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que você precisa fazer agora no Power Automate:")
-    print("1. Na ação 'HTTP', adicione um novo Header chamado 'X-Webhook-Token'")
-    print("2. O valor do token é: samurai-secret-email")
-    print("   (Você pode mudar isso no Render, na variável WEBHOOK_EMAIL_TOKEN).")
-    print("3. O Power Automate deve enviar o body EXATAMENTE no formato JSON.")
-    print("4. Agora, quando a IA gerar o Brief das 6h, ela vai ler as notícias que chegaram!")
+    print("\nO que fazer agora:")
+    print("1. Vá no Render e faça 'Manual Deploy' para aplicar a limpeza.")
+    print("2. Vá no Pipedream, corrija o Body (conforme instruído acima) e clique em 'Test'.")
+    print("3. O Streamlit Cloud vai atualizar sozinho e o e-mail correto vai aparecer!")
 
 if __name__ == "__main__":
     aplicar()

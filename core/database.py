@@ -24,7 +24,7 @@ _lock = threading.RLock()
 _pg_pool = None
 
 def get_db_url():
-    # 1) Streamlit Cloud
+    # 1) Streamlit Cloud / Secrets
     try:
         if "SUPABASE_URL" in st.secrets:
             return st.secrets["SUPABASE_URL"]
@@ -35,6 +35,25 @@ def get_db_url():
     url = os.environ.get("SUPABASE_URL", "").strip()
     if url:
         return url
+    # 3) config.json
+    import json
+    config_path = Path(__file__).resolve().parent.parent / "config.json"
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                url = json.load(f).get("supabase_url", "").strip()
+                if url: return url
+        except Exception:
+            pass
+    # 4) .env.render
+    env_render = Path(__file__).resolve().parent.parent / ".env.render"
+    if env_render.exists():
+        try:
+            for line in env_render.read_text(encoding="utf-8").splitlines():
+                if line.startswith("SUPABASE_URL="):
+                    return line.split("=", 1)[1].strip()
+        except Exception:
+            pass
     return None
 
 def get_pg_pool():
