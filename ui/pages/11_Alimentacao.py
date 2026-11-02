@@ -43,11 +43,13 @@ for nome, opcoes in refeicoes.items():
     escolha = st.selectbox(f"Prato para {nome}:", [o["prato"] for o in opcoes], key=f"s_{nome}")
     det = next(o for o in opcoes if o["prato"] == escolha)
     
-    marmita_info = ""
+    prep_texto = det["prep"]
     if "marmita" in tipo_refeicao.lower():
-        marmita_info = "<br><br><b style='color: #2196F3;'>🍱 Dica de Marmita:</b> Espere esfriar, guarde em potes de vidro fechados. Dura até 3 dias na geladeira. Ao reaquecer, adicione 1 colher de água para não secar."
-        
-    st.markdown(f'<div class="samurai-card" style="padding: 15px; border-left-color: #F9A825;"><b>🛒 Ingredientes:</b><br>{det["ing"]}<br><br><b>👨‍🍳 Modo de Preparo:</b><br>{det["prep"]}{marmita_info}<br><br><b style="color: #4CAF50;">💪 Por que é bom para Ectomorfo?</b><br>{det["porque"]}</div>', unsafe_allow_html=True)
+        prep_texto += "<br><br><b style='color: #2196F3;'>🍱 PARA MARMITA:</b> Espere esfriar e guarde em potes herméticos na geladeira. Dura até 3 dias. Ao reaquecer, adicione 1 colher de água para não secar."
+    else:
+        prep_texto += "<br><br><b style='color: #4CAF50;'>🍽️ PARA AGORA:</b> Sirva imediatamente enquanto estiver quente e no ponto."
+
+    st.markdown(f'<div class="samurai-card" style="padding: 15px; border-left-color: #F9A825;"><b>🛒 Ingredientes:</b><br>{det["ing"]}<br><br><b>👨‍🍳 Modo de Preparo:</b><br>{prep_texto}<br><br><b style="color: #4CAF50;">💪 Por que é bom para Ectomorfo?</b><br>{det["porque"]}</div>', unsafe_allow_html=True)
 
 st.divider()
 st.subheader("🤖 Chef Samurai (Criar Nova Receita)")
