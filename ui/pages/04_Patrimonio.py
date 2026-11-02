@@ -47,7 +47,7 @@ def obter_metricas_profundas(ticker):
 
 with tab_ia:
     st.header("Mentor Quantamental (Qualidade e Risco)")
-    acoes_db = query_all("SELECT * FROM portfolio WHERE ticker SUBSTR(ticker, 1, 3) != 'RF:'")
+    acoes_db = query_all("SELECT * FROM portfolio WHERE SUBSTR(ticker, 1, 3) != 'RF:'")
     rf_db = query_all("SELECT * FROM patrimony_fixed_income")
 
     texto_acoes = ""
@@ -94,7 +94,7 @@ Mantenha um tom profissional e focado em longo prazo."""
                 st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Análise de Risco e Alocação</div><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
 
 with tab_acoes:
-    carteira = query_all("SELECT * FROM portfolio WHERE ticker SUBSTR(ticker, 1, 3) != 'RF:'")
+    carteira = query_all("SELECT * FROM portfolio WHERE SUBSTR(ticker, 1, 3) != 'RF:'")
     with st.expander("➕ Adicionar Ação"):
         with st.form("f_a"):
             t = st.text_input("Ticker (ex: PETR4.SA)").upper()
@@ -129,7 +129,7 @@ with tab_chat:
     st.write("Pergunte sobre ações específicas, dividendos, riscos ou peça conselhos sobre a sua carteira.")
     
     # Pega a carteira atual para dar contexto à IA
-    acoes_db = query_all("SELECT * FROM portfolio WHERE ticker SUBSTR(ticker, 1, 3) != 'RF:'")
+    acoes_db = query_all("SELECT * FROM portfolio WHERE SUBSTR(ticker, 1, 3) != 'RF:'")
     rf_db = query_all("SELECT * FROM patrimony_fixed_income")
     
     ctx_carteira = "CARTEIRA ATUAL DO USUÁRIO:\n"

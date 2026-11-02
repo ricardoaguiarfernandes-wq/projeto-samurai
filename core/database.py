@@ -81,27 +81,21 @@ def is_postgres() -> bool:
 def adapt_sql(sql: str, is_pg: bool) -> str:
     if is_pg:
         sql = sql.replace("?", "%s")
-        sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
-        # Correção crucial: troca a string inteira para o formato do Postgres
-        sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-        # Fallback caso venha apenas AUTOINCREMENT
-        sql = sql.replace("AUTOINCREMENT", "SERIAL")
     return sql
 
 def get_connection():
-    is_pg = is_postgres()
-    if is_pg:
-        p = get_pg_pool()
-        if p:
-            return p.getconn(), True
-        else:
-            return psycopg2.connect(get_db_url()), True
+    # SISTEMA EXCLUSIVO SUPABASE (PostgreSQL)
+    db_url = get_db_url()
+    if not db_url:
+        raise Exception("⛔ SUPABASE_URL não configurada. O sistema está configurado apenas para Supabase.")
+    if not HAS_PG:
+        raise Exception("⛔ psycopg2 não instalado. Rode: pip install psycopg2-binary")
+        
+    p = get_pg_pool()
+    if p:
+        return p.getconn(), True
     else:
-        conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA foreign_keys=ON;")
-        return conn, False
+        return psycopg2.connect(db_url), True
 
 def close_connection(conn, is_pg):
     if is_pg:
