@@ -11,43 +11,48 @@ from services.ai import ask_gemini
 
 init_db()
 st.title("🍏 Alimentação")
-st.caption("Nutrição para Ectomorfos.")
+st.caption("Nutrição hipercalórica para Ectomorfos.")
 
 refeicoes = {
     "☕ Café da Manhã": [
-        {"prato": "Panqueca de Aveia", "ing": "2 ovos, 50g aveia, banana, pasta de amendoim.", "prep": "Bata tudo e doure na frigideira."},
-        {"prato": "Ovos Mexidos com Pão Integral", "ing": "3 ovos, 2 fatias pão, queijo.", "prep": "Mexa os ovos e sirva com queijo."},
-        {"prato": "Vitamina Hipercalórica", "ing": "Leite, banana, aveia, whey, pasta de amendoim.", "prep": "Bata tudo no liquidificador."}
+        {"prato": "Panqueca Proteica", "ing": "2 ovos, 50g aveia, 1 banana, 1 colher pasta de amendoim.", "prep": "Amasse a banana, misture os ovos e a aveia até formar uma massa. Despeje em frigideira antiaderente em fogo baixo. Doure dos dois lados. Sirva com a pasta de amendoim por cima.", "porque": "Aveia e banana dão carboidratos de digestão lenta, ovos dão proteína e a pasta de amendoim adiciona gordura boa para as calorias."},
+        {"prato": "Ovos Mexidos com Pão", "ing": "3 ovos, 2 fatias pão integral, 30g queijo.", "prep": "Bata os ovos com sal. Em fogo baixo, mexa lentamente até ficarem cremosos. Sirva sobre o pão tostado com o queijo derretido.", "porque": "Proteína de alto valor biológico pela manhã."},
+        {"prato": "Vitamina Hipercalórica", "ing": "300ml leite, 1 banana, 30g aveia, 1 scoop whey, 1 colher pasta de amendoim.", "prep": "Bata todos os ingredientes no liquidificador até ficar homogêneo.", "porque": "Fácil de consumir e altíssima densidade calórica."}
     ],
     "🍛 Almoço": [
-        {"prato": "Frango com Arroz e Feijão", "ing": "150g frango, arroz, feijão, salada.", "prep": "Grelhe o frango e monte o prato."},
-        {"prato": "Carne Moída com Macarrão", "ing": "150g patinho, macarrão, molho.", "prep": "Refogue a carne e misture ao macarrão."},
-        {"prato": "Tilápia com Purê e Legumes", "ing": "150g tilápia, batata, cenoura.", "prep": "Asse o peixe e faça o purê."}
+        {"prato": "Frango com Arroz e Feijão", "ing": "150g frango, 4 colheres arroz, 1 concha feijão, salada.", "prep": "Tempere o frango com alho e sal, grelhe na frigideira. Cozinhe o arroz e o feijão. Monte o prato com a salada.", "porque": "A combinação clássica brasileira (arroz + feijão) forma uma proteína completa."},
+        {"prato": "Macarrão com Carne Moída", "ing": "150g macarrão, 150g patinho moído, molho de tomate.", "prep": "Cozinhe o macarrão. Refogue a carne moída, adicione o molho de tomate e deixe apurar. Misture ao macarrão.", "porque": "Carboidratos e proteínas essenciais para repor o glicogênio pós-treino."},
+        {"prato": "Tilápia com Purê", "ing": "150g tilápia, 2 batatas, legumes.", "prep": "Asse a tilápia com limão e azeite. Cozinhe as batatas, amasse e adicione leite para fazer o purê. Sirva com legumes.", "porque": "Peixe tem digestão mais leve, ideal se for treinar logo depois."}
     ],
     "🥪 Café da Tarde": [
-        {"prato": "Sanduíche de Atum", "ing": "Pão integral, atum, maionese light.", "prep": "Misture e monte o sanduíche."},
-        {"prato": "Iogurte com Granola e Frutas", "ing": "Iogurte natural, granola, maçã.", "prep": "Misture tudo em uma tigela."},
-        {"prato": "Tapioca com Ovo e Queijo", "ing": "Goma de tapioca, 2 ovos, queijo.", "prep": "Faça a tapioca e recheie."}
+        {"prato": "Sanduíche de Atum", "ing": "2 fatias pão, 1 lata atum, maionese light.", "prep": "Misture o atum com a maionese e recheie o pão.", "porque": "Prático e rico em proteína."},
+        {"prato": "Iogurte com Granola", "ing": "200g iogurte natural, granola, mel.", "prep": "Misture tudo em uma tigela.", "porque": "Probióticos e carboidratos rápidos."},
+        {"prato": "Tapioca com Ovo", "ing": "Goma de tapioca, 2 ovos, queijo.", "prep": "Faça a tapioca na frigideira, recheie com ovos mexidos e queijo.", "porque": "Carboidratos rápidos para dar energia antes do treino."}
     ],
     "🍲 Jantar": [
-        {"prato": "Omelete de Frango", "ing": "3 ovos, frango desfiado, queijo.", "prep": "Bata os ovos e cozinhe com o frango."},
-        {"prato": "Sopa de Legumes com Carne", "ing": "Carne, batata, cenoura, macarrão.", "prep": "Cozinhe tudo na panela de pressão."},
-        {"prato": "Wrap de Frango", "ing": "Tortilha, frango, salada, molho.", "prep": "Enrole o frango na tortilha."}
+        {"prato": "Omelete de Frango", "ing": "3 ovos, frango desfiado, queijo.", "prep": "Bata os ovos, adicione o frango e o queijo. Cozinhe em fogo baixo.", "porque": "Proteína leve à noite."},
+        {"prato": "Sopa de Legumes", "ing": "Carne, batata, cenoura, macarrão.", "prep": "Cozinhe tudo na panela de pressão por 20 min.", "porque": "Hidratante e nutritivo."},
+        {"prato": "Wrap de Frango", "ing": "Tortilha, frango, salada, molho.", "prep": "Aqueça a tortilha e recheie.", "porque": "Refeição completa e rápida."}
     ]
 }
 
 for nome, opcoes in refeicoes.items():
     st.subheader(nome)
-    escolha = st.selectbox(f"Escolha o prato para {nome}:", [o["prato"] for o in opcoes], key=f"sel_{nome}")
-    detalhe = next(o for o in opcoes if o["prato"] == escolha)
-    st.markdown(f"""<div class="samurai-card" style="padding: 10px;"><b>Ingredientes:</b> {detalhe['ing']}<br><b>Modo de Preparo:</b> {detalhe['prep']}</div>""", unsafe_allow_html=True)
+    escolha = st.selectbox(f"Prato para {nome}:", [o["prato"] for o in opcoes], key=f"s_{nome}")
+    det = next(o for o in opcoes if o["prato"] == escolha)
+    st.markdown(f"""
+    <div class="samurai-card" style="padding: 15px; border-left-color: #F9A825;">
+        <b>🛒 Ingredientes:</b><br>{det['ing']}<br><br>
+        <b>👨‍🍳 Modo de Preparo:</b><br>{det['prep']}<br><br>
+        <b style="color: #4CAF50;">💪 Por que é bom para Ectomorfo?</b><br>{det['porque']}
+    </div>""", unsafe_allow_html=True)
 
 st.divider()
 st.subheader("🤖 Chef Samurai (Criar Nova Receita)")
 with st.form("form_receita"):
-    ref_escolhida = st.selectbox("Qual refeição?", list(refeicoes.keys()))
-    ingredientes = st.text_input("O que tem na geladeira?")
+    ref = st.selectbox("Refeição:", list(refeicoes.keys()))
+    ing = st.text_input("O que tem na geladeira?")
     if st.form_submit_button("Gerar Receita com IA", use_container_width=True):
         with st.spinner("Criando..."):
-            prompt = f"Crie uma receita hipercalórica para {ref_escolhida}. Ingredientes: {ingredientes}. Formate em Ingredientes e Modo de Preparo."
-            st.markdown(f"""<div class="samurai-card" style="border-left-color: #2196F3;">{ask_gemini(prompt)}</div>""", unsafe_allow_html=True)
+            prompt = f"Crie uma receita hipercalórica para {ref}. Ingredientes: {ing}. Formate com Ingredientes, Preparo e Por que é bom para ectomorfos."
+            st.markdown(f"""<div class="samurai-card">{ask_gemini(prompt)}</div>""", unsafe_allow_html=True)
