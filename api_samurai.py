@@ -449,27 +449,38 @@ REGRAS ESTRITAS:
 # ============================================================
 # NOTÍCIAS LEGISLATIVAS DIÁRIAS
 # ============================================================
+
+# ============================================================
+# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Com Resumo IA)
+# ============================================================
 @app.get("/api/daily-news", dependencies=[Depends(require_token)])
 def daily_news():
     import feedparser
     import requests
     from bs4 import BeautifulSoup
+    from services.ai import ask_gemini
 
-    noticias = []
+    noticias_brutas = []
+    links_vistos = set()
 
     # 1. Câmara dos Deputados (RSS)
     try:
         feed = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
-        for entry in feed.entries[:4]:
-            noticias.append(f"[Câmara] {entry.title}")
+        for entry in feed.entries[:3]:
+            resumo = getattr(entry, 'summary', '')
+            # Limpa HTML do resumo
+            clean_resumo = BeautifulSoup(resumo, "html.parser").get_text(strip=True)
+            noticias_brutas.append(f"FONTE: Câmara\nTÍTULO: {entry.title}\nRESUMO: {clean_resumo}")
     except Exception as e:
         print(f"Erro Câmara RSS: {e}")
 
     # 2. Senado Federal (RSS)
     try:
         feed = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
-        for entry in feed.entries[:4]:
-            noticias.append(f"[Senado] {entry.title}")
+        for entry in feed.entries[:3]:
+            resumo = getattr(entry, 'summary', '')
+            clean_resumo = BeautifulSoup(resumo, "html.parser").get_text(strip=True)
+            noticias_brutas.append(f"FONTE: Senado\nTÍTULO: {entry.title}\nRESUMO: {clean_resumo}")
     except Exception as e:
         print(f"Erro Senado RSS: {e}")
 
@@ -481,8 +492,10 @@ def daily_news():
             if "Noticia" in a["href"] or "noticias" in a["href"]:
                 titulo = a.get_text(strip=True)
                 if titulo and len(titulo) > 30 and not titulo.startswith("http"):
-                    noticias.append(f"[ALERJ] {titulo}")
-                    if len([n for n in noticias if "[ALERJ]" in n]) >= 3:
+                    if titulo not in links_vistos:
+                        links_vistos.add(titulo)
+                        noticias_brutas.append(f"FONTE: ALERJ\nTÍTULO: {titulo}\nRESUMO: Notícia do site da ALERJ.")
+                    if len([n for n in noticias_brutas if "ALERJ" in n]) >= 2:
                         break
     except Exception as e:
         print(f"Erro ALERJ scraping: {e}")
@@ -494,16 +507,40 @@ def daily_news():
         for h in soup.find_all(["h2", "h3", "h4"]):
             titulo = h.get_text(strip=True)
             if titulo and len(titulo) > 30:
-                noticias.append(f"[Macaé] {titulo}")
-                if len([n for n in noticias if "[Macaé]" in n]) >= 3:
+                if titulo not in links_vistos:
+                    links_vistos.add(titulo)
+                    noticias_brutas.append(f"FONTE: Macaé\nTÍTULO: {titulo}\nRESUMO: Notícia do site da Câmara de Macaé.")
+                if len([n for n in noticias_brutas if "Macaé" in n]) >= 2:
                     break
     except Exception as e:
         print(f"Erro Macaé scraping: {e}")
 
-    if not noticias:
+    if not noticias_brutas:
         return {"text": "📰 Nenhuma notícia encontrada no momento."}
 
-    texto_final = "🏛️ **Notícias Legislativas**\n\n" + "\n".join([f"• {n}" for n in noticias[:12]])
+    # Agora, enviamos tudo para a IA mastigar e resumir
+    texto_bruto_concatenado = "\n\n---\n\n".join(noticias_brutas)
+    
+    prompt = f"""Atue como o Analista Político do Projeto Samurai.
+Abaixo estão as notícias brutas coletadas hoje dos sites oficiais.
+
+Sua missão:
+1. Para CADA notícia, crie um resumo explicativo curto (2 a 3 linhas).
+2. O resumo deve explicar "o que aconteceu" e "qual o impacto prático" para o cidadão.
+3. Formate a saída como uma lista em Markdown (bullet points). Use negrito no título e texto normal no resumo.
+4. Organize por fonte (Câmara, Senado, Macaé, ALERJ) se possível.
+5. Seja direto, sem enrolação e sem introduções (não escreva "aqui estão as notícias").
+
+NOTÍCIAS BRUTAS:
+{texto_bruto_concatenado}
+"""
+
+    try:
+        resumo_final = ask_gemini(prompt)
+        texto_final = "🏛️ **Notícias Legislativas Resumidas**\n\n" + resumo_final
+    except Exception as e:
+        texto_final = "Erro ao gerar resumo com a IA. Aqui estão os títulos brutos:\n\n" + texto_bruto_concatenado
+
     return {"text": texto_final}
 
 

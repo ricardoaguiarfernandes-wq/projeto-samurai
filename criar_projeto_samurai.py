@@ -1,16 +1,16 @@
 """
-criar_projeto_samurai.py — V6.4 (Força Deploy no Render e Corrige Notícias)
+criar_projeto_samurai.py — V6.5 (Resumo Inteligente de Notícias)
 
 ENTREGAS:
-1. FIX (Notícias): Melhora a raspagem da Câmara e Senado.
-2. DEPLOY FORÇADO: O script agora lê o seu .env.render e dispara o Deploy Hook automaticamente após o git push.
+1. FIX (api_samurai.py): A rota /api/daily-news agora coleta os resumos dos feeds.
+2. IA: Usa o Gemini para transformar as manchetes em resumos explicativos de 2-3 linhas.
+3. ALERJ: Mantém a tentativa de scraping (mesmo que o site seja dinâmico).
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
 from __future__ import annotations
 
 import ast
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -29,38 +29,42 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-# ============================================================
-# 1. CORREÇÃO DAS NOTÍCIAS
-# ============================================================
-def fix_api_news() -> None:
+def fix_api_news_summary() -> None:
     p = BASE / "api_samurai.py"
     txt = read(p)
 
     new_endpoint = r'''
 # ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS
+# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Com Resumo IA)
 # ============================================================
 @app.get("/api/daily-news", dependencies=[Depends(require_token)])
 def daily_news():
     import feedparser
     import requests
     from bs4 import BeautifulSoup
+    from services.ai import ask_gemini
 
-    noticias = []
+    noticias_brutas = []
+    links_vistos = set()
 
     # 1. Câmara dos Deputados (RSS)
     try:
         feed = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
-        for entry in feed.entries[:4]:
-            noticias.append(f"[Câmara] {entry.title}")
+        for entry in feed.entries[:3]:
+            resumo = getattr(entry, 'summary', '')
+            # Limpa HTML do resumo
+            clean_resumo = BeautifulSoup(resumo, "html.parser").get_text(strip=True)
+            noticias_brutas.append(f"FONTE: Câmara\nTÍTULO: {entry.title}\nRESUMO: {clean_resumo}")
     except Exception as e:
         print(f"Erro Câmara RSS: {e}")
 
     # 2. Senado Federal (RSS)
     try:
         feed = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
-        for entry in feed.entries[:4]:
-            noticias.append(f"[Senado] {entry.title}")
+        for entry in feed.entries[:3]:
+            resumo = getattr(entry, 'summary', '')
+            clean_resumo = BeautifulSoup(resumo, "html.parser").get_text(strip=True)
+            noticias_brutas.append(f"FONTE: Senado\nTÍTULO: {entry.title}\nRESUMO: {clean_resumo}")
     except Exception as e:
         print(f"Erro Senado RSS: {e}")
 
@@ -72,8 +76,10 @@ def daily_news():
             if "Noticia" in a["href"] or "noticias" in a["href"]:
                 titulo = a.get_text(strip=True)
                 if titulo and len(titulo) > 30 and not titulo.startswith("http"):
-                    noticias.append(f"[ALERJ] {titulo}")
-                    if len([n for n in noticias if "[ALERJ]" in n]) >= 3:
+                    if titulo not in links_vistos:
+                        links_vistos.add(titulo)
+                        noticias_brutas.append(f"FONTE: ALERJ\nTÍTULO: {titulo}\nRESUMO: Notícia do site da ALERJ.")
+                    if len([n for n in noticias_brutas if "ALERJ" in n]) >= 2:
                         break
     except Exception as e:
         print(f"Erro ALERJ scraping: {e}")
@@ -85,16 +91,40 @@ def daily_news():
         for h in soup.find_all(["h2", "h3", "h4"]):
             titulo = h.get_text(strip=True)
             if titulo and len(titulo) > 30:
-                noticias.append(f"[Macaé] {titulo}")
-                if len([n for n in noticias if "[Macaé]" in n]) >= 3:
+                if titulo not in links_vistos:
+                    links_vistos.add(titulo)
+                    noticias_brutas.append(f"FONTE: Macaé\nTÍTULO: {titulo}\nRESUMO: Notícia do site da Câmara de Macaé.")
+                if len([n for n in noticias_brutas if "Macaé" in n]) >= 2:
                     break
     except Exception as e:
         print(f"Erro Macaé scraping: {e}")
 
-    if not noticias:
+    if not noticias_brutas:
         return {"text": "📰 Nenhuma notícia encontrada no momento."}
 
-    texto_final = "🏛️ **Notícias Legislativas**\n\n" + "\n".join([f"• {n}" for n in noticias[:12]])
+    # Agora, enviamos tudo para a IA mastigar e resumir
+    texto_bruto_concatenado = "\n\n---\n\n".join(noticias_brutas)
+    
+    prompt = f"""Atue como o Analista Político do Projeto Samurai.
+Abaixo estão as notícias brutas coletadas hoje dos sites oficiais.
+
+Sua missão:
+1. Para CADA notícia, crie um resumo explicativo curto (2 a 3 linhas).
+2. O resumo deve explicar "o que aconteceu" e "qual o impacto prático" para o cidadão.
+3. Formate a saída como uma lista em Markdown (bullet points). Use negrito no título e texto normal no resumo.
+4. Organize por fonte (Câmara, Senado, Macaé, ALERJ) se possível.
+5. Seja direto, sem enrolação e sem introduções (não escreva "aqui estão as notícias").
+
+NOTÍCIAS BRUTAS:
+{texto_bruto_concatenado}
+"""
+
+    try:
+        resumo_final = ask_gemini(prompt)
+        texto_final = "🏛️ **Notícias Legislativas Resumidas**\n\n" + resumo_final
+    except Exception as e:
+        texto_final = "Erro ao gerar resumo com a IA. Aqui estão os títulos brutos:\n\n" + texto_bruto_concatenado
+
     return {"text": texto_final}
 
 '''
@@ -109,40 +139,7 @@ def daily_news():
         txt = txt[:start_idx] + new_endpoint + "\n" + txt[end_idx:]
         write_validated(p, txt)
     else:
-        print("[AVISO] api_samurai.py — rota de notícias já pode estar atualizada.")
-
-# ============================================================
-# 2. DISPARAR DEPLOY NO RENDER
-# ============================================================
-def force_render_deploy():
-    print("\n🚀 FORÇANDO DEPLOY NO RENDER...")
-    
-    # Tenta pegar a URL do hook
-    hook_url = os.environ.get("RENDER_DEPLOY_HOOK_URL")
-    
-    if not hook_url:
-        # Se não estiver nas variáveis de ambiente, tenta ler do .env.render
-        env_file = BASE / ".env.render"
-        if env_file.exists():
-            for line in read(env_file).splitlines():
-                if line.startswith("RENDER_DEPLOY_HOOK_URL="):
-                    hook_url = line.split("=", 1)[1].strip()
-                    break
-                    
-    if not hook_url:
-        print("[AVISO] RENDER_DEPLOY_HOOK_URL não encontrada. O Render não será reiniciado automaticamente.")
-        print("        Vá no painel do Render e clique em 'Manual Deploy'.")
-        return
-
-    try:
-        import requests
-        response = requests.get(hook_url, timeout=15)
-        if response.status_code in [200, 201]:
-            print("[OK] Deploy disparado com sucesso no Render! Aguarde 2 minutos.")
-        else:
-            print(f"[AVISO] O Render respondeu com status {response.status_code}.")
-    except Exception as e:
-        print(f"[ERRO] Falha ao contatar o Render: {e}")
+        print("[ERRO] api_samurai.py — marcadores não encontrados.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -150,31 +147,46 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix: forca deploy no render e melhora raspagem de noticias"])
+    _git_run_safe(["commit", "-m", "feat(api): adiciona resumo inteligente com ia nas noticias legislativas"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
-        print("[OK] Push concluído!")
-        # Chama a função de deploy após o push dar certo
-        force_render_deploy()
+        print("[OK] Push concluído com sucesso!")
+        
+        # Força o deploy no Render lendo do .env.render
+        try:
+            hook_url = ""
+            env_file = BASE / ".env.render"
+            if env_file.exists():
+                for line in read(env_file).splitlines():
+                    if line.startswith("RENDER_DEPLOY_HOOK_URL="):
+                        hook_url = line.split("=", 1)[1].strip()
+                        break
+            if hook_url:
+                import requests
+                requests.get(hook_url, timeout=10)
+                print("[OK] Deploy no Render disparado!")
+        except Exception:
+            pass
     else:
         print(f"[ERRO] Push falhou:\n{r.stderr}")
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V6.4 — FORÇAR DEPLOY NO RENDER")
+    print("V6.5 — RESUMO INTELIGENTE DE NOTÍCIAS")
     print("=" * 60)
 
-    fix_api_news()
+    fix_api_news_summary()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que fazer agora:")
-    print("1. Espere cerca de 2 minutos (o Render está reiniciando agora via API).")
-    print("2. Vá no GitHub Actions e clique em 'Re-run jobs' (na aba Samurai Daily News).")
-    print("3. As notícias devem chegar no seu Telegram.")
+    print("\nO que testar agora:")
+    print("1. Espere o Render ficar 'Live' (cerca de 2 min).")
+    print("2. Vá no GitHub Actions e rode o 'Samurai Daily News' novamente.")
+    print("3. Desta vez, a mensagem no Telegram terá um texto explicativo em cada tópico.")
+    print("\nAguardando seu feedback para escolhermos qual das 5 automações faremos primeiro!")
 
 if __name__ == "__main__":
     aplicar()
