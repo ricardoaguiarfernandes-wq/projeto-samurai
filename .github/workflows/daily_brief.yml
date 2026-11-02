@@ -1,0 +1,29 @@
+name: Samurai Daily Brief
+
+on:
+  schedule:
+    # 09:00 UTC = 06:00 Horário de Brasília
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Permite rodar manualmente para testar
+
+jobs:
+  send_brief:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar Dependências
+        run: pip install requests
+
+      - name: Executar Envio do Telegram
+        env:
+          SAMURAI_API_TOKEN: ${{ secrets.SAMURAI_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python daily_brief_telegram.py

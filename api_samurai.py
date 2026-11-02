@@ -65,6 +65,19 @@ def _get_expected_token() -> Optional[str]:
     return None
 
 
+
+def safe_int(v) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+def safe_float(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
 def require_token(authorization: Optional[str] = Header(None)) -> None:
     expected = _get_expected_token()
     if not expected:
@@ -131,27 +144,28 @@ def get_status():
     checkin = query_one(
         "SELECT * FROM daily_checkins WHERE checkin_date = ?", (today_iso,)
     )
-    total_habits = (query_one(
+    total_habits = safe_int((query_one(
         "SELECT COUNT(*) AS c FROM habits WHERE active = 1"
-    ) or {}).get("c") or 0
-    done_today = (query_one(
+    ) or {}).get("c"))
+    done_today = safe_int((query_one(
         "SELECT COUNT(*) AS c FROM habit_logs WHERE log_date = ? AND done = 1",
         (today_iso,),
-    ) or {}).get("c") or 0
+    ) or {}).get("c"))
 
     checkins = query_all(
         "SELECT energy, stress, sleep_hours FROM daily_checkins WHERE checkin_date >= ?",
         (week_ago,),
     )
     logs = query_all("SELECT done FROM habit_logs WHERE log_date >= ?", (week_ago,))
-    done = sum(1 for r in logs if r["done"])
+    
+    done = sum(1 for r in logs if safe_int(r.get("done")) == 1)
     possible = total_habits * 7
     taxa = done / possible if possible > 0 else 0.0
 
     if checkins:
-        avg_energy = sum(r["energy"] for r in checkins) / len(checkins)
-        avg_stress = sum(r["stress"] for r in checkins) / len(checkins)
-        avg_sleep = sum(r["sleep_hours"] for r in checkins) / len(checkins)
+        avg_energy = sum(safe_float(r.get("energy")) for r in checkins) / len(checkins)
+        avg_stress = sum(safe_float(r.get("stress")) for r in checkins) / len(checkins)
+        avg_sleep = sum(safe_float(r.get("sleep_hours")) for r in checkins) / len(checkins)
     else:
         avg_energy, avg_stress, avg_sleep = 5.0, 5.0, 7.0
 
@@ -280,9 +294,16 @@ def daily_brief():
     from services.ai import ask_gemini
 
     today_iso = date.today().isoformat()
-    status = get_status()
-    habits = list_habits()["habits"]
-    pending = [h["name"] for h in habits if not h["done"]]
+    try:
+        status = get_status()
+    except Exception as e:
+        return {"error": f"Falha ao ler status: {e}"}
+    
+    try:
+        habits = list_habits().get("habits", [])
+        pending = [h["name"] for h in habits if not safe_int(h.get("done"))]
+    except Exception:
+        pending = []
 
     prompt = f"""Voce e o Mentor Samurai, sistema operacional pessoal do Ricardo.
 Data: {today_iso}.

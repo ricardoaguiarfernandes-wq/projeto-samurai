@@ -25,3 +25,6 @@ Thumbs.db
 
 # Mapas gerados (podem conter snapshot do codigo, incluindo config.json)
 PROJETO_SAMURAI*.md
+
+# Env vars do Render (nunca commitar)
+.env.render
