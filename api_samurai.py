@@ -315,7 +315,7 @@ def daily_brief():
     except Exception:
         pending = []
 
-    # Calcula o treino do dia baseado na rotação
+    # 1. Calcula o treino do dia baseado na rotação
     treino_hoje = "Treino não configurado"
     try:
         settings = query_one("SELECT workout_split, workout_start_date FROM user_settings WHERE id = 1")
@@ -338,43 +338,66 @@ def daily_brief():
     except Exception as e:
         print(f"Erro ao calcular treino: {e}")
 
-    # Busca as notícias do dia para incluir no brief
+    # 2. Busca as notícias do dia
     try:
         emails = query_all("SELECT subject, content FROM newsletters_inbox ORDER BY received_at DESC LIMIT 3")
-        noticias_ctx = "\n".join([f"[{e['subject']}] {e['content'][:1000]}" for e in emails])
+        noticias_ctx = "\n".join([f"[{e['subject']}] {e['content'][:800]}" for e in emails])
     except Exception:
         noticias_ctx = "Nenhuma noticia recebida hoje."
 
-    prompt = f"""Voce e o Mentor Samurai, sistema operacional pessoal do Ricardo.
-Data: {today_iso}.
+    # 3. Busca o status da carteira
+    try:
+        portfolio = query_all("SELECT ticker, quantity FROM portfolio LIMIT 5")
+        carteira_ctx = ", ".join([f"{p['ticker']} ({p['quantity']})" for p in portfolio]) if portfolio else "Carteira vazia."
+    except Exception:
+        carteira_ctx = "Erro ao ler carteira."
 
-NOTICIAS DE HOJE (Newsletters):
+    # 4. Busca as missões de carreira pendentes
+    try:
+        missoes = query_all("SELECT task FROM career_missions WHERE mission_date = ? AND completed = 0", (today_iso,))
+        carreira_ctx = "\n".join([f"- {m['task']}" for m in missoes]) if missoes else "Nenhuma missão pendente."
+    except Exception:
+        carreira_ctx = "Erro ao ler carreira."
+
+    prompt = f"""Atue como o Conselho de Mestres do Projeto Samurai. Você é a fusão de três especialistas:
+1. Mestre Financeiro (Foco: Proteção patrimonial, notícias e longo prazo).
+2. Mestre Treinador (Foco: Hipertrofia, cardio, recuperação e Burnout).
+3. Mestre Filósofo COF (Foco: Disciplina, estoicismo e consistência).
+
+Sua missão é debater internamente os dados do dia e gerar uma diretriz unificada para o Ricardo.
+
+DADOS DO DIA ({today_iso}):
+- Check-in de Hoje: {status["checkin"] or "não realizado"}
+- Burnout (7d): {status["burnout"]["score"]}/100 (Energia: {status["burnout"]["avg_energy"]}, Sono: {status["burnout"]["avg_sleep"]}h, Estresse: {status["burnout"]["avg_stress"]})
+- Hábitos Pendentes: {pending if pending else "todos concluídos"}
+- Treino Programado: {treino_hoje}
+- Missões de Carreira (Survey): 
+{carreira_ctx}
+
+CONTEXTO EXTERNO:
+- Notícias Recentes: 
 {noticias_ctx}
+- Carteira de Investimentos: {carteira_ctx}
 
-Dados do dia:
-- Treino do Dia (Rotação): {treino_hoje}
-- Check-in: {status["checkin"] or "nao realizado"}
-- Burnout score (7d): {status["burnout"]["score"]}/100 (energia {status["burnout"]["avg_energy"]}, sono {status["burnout"]["avg_sleep"]}h, stress {status["burnout"]["avg_stress"]})
-- Habitos pendentes: {pending if pending else "todos concluidos"}
-- Taxa de habitos 7d: {status["burnout"]["habit_rate"]}%
+REGRAS DO DEBATE (Você deve aplicar isso na sua resposta):
+1. **Mestre Financeiro:** Se as notícias mostrarem crise ou a carteira estiver vazia, ele dirá para segurar a emoção e focar em aprender, não em gastar.
+2. **Mestre Treinador:** Se o Burnout for Alto/Crítico (>60) ou o sono <6h, ele DEVE vetar treinos pesados. O Treino deve ser alterado para "Recuperação/Mobilidade", ignorando a rotação original.
+3. **Mestre Filósofo:** Ele vai equilibrar os dois, focando na constância e não na intensidade hoje.
 
-Sua resposta DEVE ser um JSON valido com EXATAMENTE estas chaves (sem texto antes ou depois):
+Sua resposta DEVE ser um JSON válido com EXATAMENTE estas chaves (sem texto antes ou depois):
 {{
-  "greeting": "<cumprimento curto, 1 linha>",
+  "greeting": "<cumprimento curto, 1 linha, tom de mestre>",
   "burnout_alert": "<Baixo|Medio|Alto|Critico>",
   "top_3_priorities": ["<prioridade 1>", "<prioridade 2>", "<prioridade 3>"],
-  "training": "<recomendacao de treino do dia, 1 linha>",
+  "training": "<recomendacao de treino do dia, adaptada pelo Treinador>",
   "verse_of_the_day": "<referencia biblica + versiculo curto, sem inventar>",
   "closing": "<frase de encerramento, 1 linha, tom samurai>"
 }}
 
 REGRAS ESTRITAS:
 - NUNCA use "ou". Crave a escolha.
-- Se burnout >= 60, incluir "Descanso e sono" em top_3_priorities.
-- O campo "training" DEVE ser exatamente "{treino_hoje}". 
-- Filosofia Samurai: O usuário está no nível INICIANTE. O treino recomendado deve ser para iniciantes, com foco em evolução para o nível AVANÇADO.
-- Se o treino for "Corrida", foque apenas em dicas de corrida/cardio. NÃO mencione musculação ou dicas de "ectomorfo".
-- Versiculo deve ser real (nao invente referencia nem texto).
+- Se o Treinador alterou o treino por causa do Burnout, explique rapidamente no campo "training".
+- O campo "verse_of_the_day" deve ser real.
 - Responda APENAS o JSON. Nada fora do bloco.
 """
     raw = ask_gemini(prompt)
