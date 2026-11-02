@@ -1,5 +1,5 @@
 """
-aplicar_melhoria.py — Corrige cotações (fallback 5d) e adiciona diversificação setorial.
+aplicar_melhoria.py — IA Quantamental: Análise profunda com métricas fundamentalistas.
 """
 from __future__ import annotations
 
@@ -30,66 +30,92 @@ init_db()
 execute("CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, rate TEXT)")
 
 st.title("💎 Patrimônio")
-tab_ia, tab_acoes, tab_rf = st.tabs(["🤖 Consultor IA", "📊 Ações/FIIs", "🏦 Renda Fixa"])
+tab_ia, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "📊 Ações/FIIs", "🏦 Renda Fixa"])
+
+def obter_metricas_profundas(ticker):
+    \"\"\"Busca um pacote completo de métricas fundamentalistas para a IA.\"\"\"
+    ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
+    try:
+        info = yf.Ticker(ticker_busca).info
+        # Extrai as métricas de forma segura
+        pl = info.get("trailingPE")
+        pvp = info.get("priceToBook")
+        dy = info.get("dividendYield")
+        roe = info.get("returnOnEquity")
+        divida = info.get("debtToEquity")
+        margem = info.get("profitMargins")
+        setor = info.get("sector", "Desconhecido")
+        
+        # Formata para porcentagem e arredonda
+        return {
+            "pl": f"{pl:.2f}" if pl else "N/A",
+            "pvp": f"{pvp:.2f}" if pvp else "N/A",
+            "dy": f"{dy*100:.2f}%" if dy else "N/A",
+            "roe": f"{roe*100:.2f}%" if roe else "N/A",
+            "divida": f"{divida:.2f}%" if divida else "N/A",
+            "margem": f"{margem*100:.2f}%" if margem else "N/A",
+            "setor": setor
+        }
+    except Exception:
+        return {"pl": "N/A", "pvp": "N/A", "dy": "N/A", "roe": "N/A", "divida": "N/A", "margem": "N/A", "setor": "N/A"}
 
 with tab_ia:
-    st.header("Mentor Financeiro (CFP)")
+    st.header("Mentor Financeiro Quantamental")
+    st.write("A IA agora analisa múltiplos fundamentalistas reais (P/L, P/VP, ROE, Dívida/Patrimônio) para decidir se um ativo está realmente descontado.")
+    
     acoes_db = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
     rf_db = query_all("SELECT * FROM patrimony_fixed_income")
 
-    # Busca a cotação real de cada ação
     texto_acoes = ""
     for a in acoes_db:
         ticker = a['ticker']
         ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
         
         try:
-            # MUDANÇA AQUI: Busca 5 dias para garantir que pega o último fechamento válido (mesmo em fim de semana)
             ticker_obj = yf.Ticker(ticker_busca)
             data = ticker_obj.history(period="5d")
+            if data.empty: data = ticker_obj.history(period="max")
             
-            if data.empty:
-                # Se falhar, tenta buscar o máximo histórico
-                data = ticker_obj.history(period="max")
-                
             if not data.empty:
                 preco_atual = float(data['Close'].iloc[-1])
                 lucro_pct = ((preco_atual / a['average_price']) - 1) * 100
-                texto_acoes += f"- {ticker}: {a['quantity']} cotas | Preço Médio: R$ {a['average_price']:.2f} | Cotação Atual: R$ {preco_atual:.2f} | Rentabilidade: {lucro_pct:.2f}%\\n"
+                m = obter_metricas_profundas(ticker)
+                
+                texto_acoes += f"- {ticker} (Setor: {m['setor']}): {a['quantity']} cotas | PM: R$ {a['average_price']:.2f} | Atual: R$ {preco_atual:.2f} | Rent: {lucro_pct:.2f}%\\n"
+                texto_acoes += f"  Métricas: P/L: {m['pl']} | P/VP: {m['pvp']} | DY: {m['dy']} | ROE: {m['roe']} | Dívida/Patrimônio: {m['divida']} | Margem Líq: {m['margem']}\\n"
             else:
-                texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Cotação indisponível na API)\\n"
-        except Exception as e:
-            texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Erro: {str(e)[:20]})\\n"
+                texto_acoes += f"- {ticker}: Cotação indisponível (PM: R$ {a['average_price']:.2f})\\n"
+        except Exception:
+            texto_acoes += f"- {ticker}: Erro ao buscar dados (PM: R$ {a['average_price']:.2f})\\n"
 
     texto_rf = "".join([f"- {r['name']}: R$ {r['amount']} (Taxa: {r['rate']})\\n" for r in rf_db])
 
-    with st.expander("Ver Carteira Atual (com cotações reais)"):
+    with st.expander("Ver Carteira Atual e Métricas"):
         st.markdown(f"**Ações:**\\n{texto_acoes if texto_acoes else 'Vazio'}")
         st.markdown(f"**Renda Fixa:**\\n{texto_rf if texto_rf else 'Vazio'}")
 
     with st.form("form_aporte"):
         aporte = st.number_input("Quanto você tem para investir este mês? (R$)", min_value=0.0, step=100.0)
-        if st.form_submit_button("Gerar Plano de Alocação", use_container_width=True) and aporte > 0:
-            with st.spinner("Analisando o mercado e buscando as melhores ações perenes..."):
+        if st.form_submit_button("Gerar Análise Quantamental e Alocação", use_container_width=True) and aporte > 0:
+            with st.spinner("Cruzando dados fundamentalistas e analisando o mercado..."):
                 
-                # Prompt atualizado com regra de diversificação
-                prompt = f\"\"\"Atue como um Consultor Financeiro (CFP) sênior.
-Tenho R$ {aporte:.2f} para investir este mês.
-Minha carteira atual de ações perenes (Buy and Hold, NUNCA vender):
+                prompt = f\"\"\"Atue como um Analista Quantamental Sênior (unindo análise quantitativa e fundamentalista).
+Tenho R$ {aporte:.2f} para investir.
+Minha carteira (estratégia Buy and Hold, ativos perenes, NUNCA vender):
 {texto_acoes}
-Minha Renda Fixa:
+Renda Fixa:
 {texto_rf}
 
 Sua missão OBRIGATÓRIA:
-1. Analise se as minhas ações atuais estão em bom preço de compra (descontadas) USANDO AS COTAÇÕES FORNECIDAS ACIMA. Se o dado não estiver disponível, diga isso explicitamente, mas não invente.
-2. Se as ações atuais NÃO estiverem descontadas, VOCÊ DEVE me apresentar EXATAMENTE 3 NOVAS AÇÕES PERENES.
-3. **REGRA DE OURO DA DIVERSIFICAÇÃO:** As 3 ações sugeridas DEVEM ser de setores DIFERENTES (ex: Energia, Saneamento, Bancos/Seguros, Papel e Celulose). O objetivo é proteger a carteira contra crises setoriais. NUNCA sugira 3 empresas do mesmo setor.
-4. Para cada uma das 3 ações sugeridas, explique em um parágrafo: Por que ela é perene (monopólio, moat, dividendos consistentes) e por que o preço está atrativo hoje.
-5. Ao final, faça a divisão exata do aporte de R$ {aporte:.2f} entre Renda Fixa, Reserva de Oportunidade (para quedas futuras) e as Ações (seja nas atuais ou nas 3 novas sugeridas). Justifique a alocação centavo por centavo.
+1. Analise minhas ações atuais usando as métricas fornecidas. Uma ação está "descontada" se o P/L for baixo para o setor, o DY for alto e o ROE for consistente. NÃO invente dados que não estão no texto.
+2. Se as ações atuais NÃO estiverem baratas, sugira EXATAMENTE 3 NOVAS AÇÕES PERENES.
+3. **REGRA DE OURO DA DIVERSIFICAÇÃO:** As 3 ações DEVEM ser de setores DIFERENTES (ex: Energia, Saneamento, Bancos, Papel). Nunca 3 do mesmo setor.
+4. Para cada nova ação, justifique citando P/L, DY e ROE estimados, e por que é um bom momento de compra.
+5. Faça a divisão exata do aporte de R$ {aporte:.2f} entre Renda Fixa, Reserva de Oportunidade e as Ações (novas ou atuais). Justifique centavo por centavo.
 
-Mantenha um tom profissional, focado no longo prazo e na segurança do patrimônio.\"\"\"
+Seja cirúrgico, profissional e focado em resultados de longo prazo.\"\"\"
                 
-                st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Plano de Alocação</div><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Análise Quantamental</div><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
 
 with tab_acoes:
     carteira = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
@@ -130,7 +156,7 @@ def _run(cmd):
 
 def aplicar():
     print("=" * 60)
-    print("⚔️  CORRIGINDO COTAÇÕES E ADICIONANDO DIVERSIFICAÇÃO")
+    print("⚔️  ATUALIZANDO IA PARA ANÁLISE QUANTAMENTAL")
     print("=" * 60)
     
     cam = "ui/pages/04_Patrimonio.py"
@@ -144,7 +170,7 @@ def aplicar():
 
     print("\n☁️  SINCRONIZANDO COM O GITHUB")
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Feat: IA exige diversificacao setorial e corrige fallback de cotacoes"])
+    _run(["git", "commit", "-m", "Feat: IA Quantamental com metricas profundas e regra de diversificacao"])
     _run(["git", "push", "origin", "main"])
     print("[OK] Push concluído. O Streamlit vai atualizar em instantes.")
     print("=" * 60)
