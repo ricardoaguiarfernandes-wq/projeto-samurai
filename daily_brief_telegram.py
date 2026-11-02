@@ -39,7 +39,7 @@ def send_telegram_message():
     
     print("📤 Enviando mensagem para o Telegram...")
     tg_url = f"https://api.telegram.org/bot{tg_bot_token}/sendMessage"
-    payload = {"chat_id": tg_chat_id, "text": mensagem, "parse_mode": "Markdown"}
+    payload = {"chat_id": tg_chat_id, "text": mensagem, "parse_mode": "HTML", "disable_web_page_preview": True}
     
     tg_resp = requests.post(tg_url, json=payload, timeout=15)
     

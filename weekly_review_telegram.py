@@ -22,7 +22,7 @@ def run():
         else:
             msg += "🔥 *Excelente:* Você está no caminho da disciplina. Mantenha o foco!\n"
             
-        requests.post(f"https://api.telegram.org/bot{tg}/sendMessage", json={"chat_id": chat, "text": msg, "parse_mode": "Markdown"})
+        requests.post(f"https://api.telegram.org/bot{tg}/sendMessage", json={"chat_id": chat, "text": msg, "parse_mode": "HTML", "disable_web_page_preview": True})
     except Exception as e:
         print(f"Erro: {e}")
 

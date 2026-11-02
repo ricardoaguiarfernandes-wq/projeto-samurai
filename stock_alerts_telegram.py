@@ -25,8 +25,11 @@ def run():
                     alertas.append(f"📉 *{t}* caiu {abs(queda):.1f}% (R$ {hoje:.2f}). Oportunidade?")
         
         if alertas:
-            msg = "🎯 **Caçador de Oportunidades**\n\n" + "\n".join(alertas)
-            requests.post(f"https://api.telegram.org/bot{tg}/sendMessage", json={"chat_id": chat, "text": msg, "parse_mode": "Markdown"})
+            msg = "🎯 <b>Caçador de Oportunidades</b>\n\n" + "\n".join(alertas)
+        else:
+            msg = "📈 <b>Status do Mercado</b>\n\nNenhuma queda brusca (acima de 2%) nas suas ações hoje. O mercado está estável."
+            
+        requests.post(f"https://api.telegram.org/bot{tg}/sendMessage", json={"chat_id": chat, "text": msg, "parse_mode": "HTML"})
             
     except Exception as e:
         print(f"Erro: {e}")
