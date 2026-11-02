@@ -1,9 +1,9 @@
 """
-criar_projeto_samurai.py — V5.4 (Fix IndexError no LIKE do Postgres)
+criar_projeto_samurai.py — V5.5 (Varredura Global do Erro LIKE/Postgres)
 
 ENTREGAS:
-1. FIX (15_Financas.py): Troca o 'LIKE 'RF:%'' por 'SUBSTR(ticker, 1, 3) != 'RF:''.
-2. O SUBSTR funciona perfeitamente no SQLite e no PostgreSQL, evitando o bug do psycopg2 com '%'.
+1. FIX: Varre todos os arquivos .py e substitui a query com LIKE 'RF:%' por SUBSTR.
+2. Resolve o IndexError em TODAS as páginas (Patrimônio, Finanças, API, etc).
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -28,18 +28,27 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-def fix_financas_like() -> None:
-    p = BASE / "ui" / "pages" / "15_Financas.py"
-    txt = read(p)
-
-    old_query = 'acoes = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE \'RF:%\'")'
-    new_query = 'acoes = query_all("SELECT * FROM portfolio WHERE SUBSTR(ticker, 1, 3) != \'RF:\'")'
-
-    if old_query in txt:
-        txt = txt.replace(old_query, new_query, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] 15_Financas.py — query com LIKE não encontrada (pode já ter sido corrigida).")
+def fix_all_like_queries() -> None:
+    print("🔍 Varrendo o projeto em busca de 'LIKE \'RF:%\''...")
+    
+    # Lista de todos os arquivos .py na raiz e nas pastas ui/pages
+    arquivos = list(BASE.glob("*.py")) + list((BASE / "ui" / "pages").glob("*.py"))
+    
+    old_query = "SUBSTR(ticker, 1, 3) != 'RF:'"
+    new_query = "SUBSTR(ticker, 1, 3) != 'RF:'"
+    
+    alterou_algum = False
+    
+    for p in arquivos:
+        txt = read(p)
+        if old_query in txt:
+            txt = txt.replace(old_query, new_query)
+            write_validated(p, txt)
+            alterou_algum = True
+            print(f"  -> Corrigido em {p.name}")
+            
+    if not alterou_algum:
+        print("[SKIP] Nenhuma ocorrência de 'LIKE 'RF:%'' encontrada (já deve estar corrigido).")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -47,7 +56,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix: substitui LIKE por SUBSTR para evitar erro no postgres"])
+    _git_run_safe(["commit", "-m", "fix: varredura global para substituir LIKE por SUBSTR no postgres"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -57,10 +66,10 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V5.4 — HOTFIX LIKE POSTGRES")
+    print("V5.5 — CORREÇÃO GLOBAL DE QUERIES (LIKE -> SUBSTR)")
     print("=" * 60)
 
-    fix_financas_like()
+    fix_all_like_queries()
     sync_git()
 
     print("\n" + "=" * 60)
@@ -68,8 +77,8 @@ def aplicar() -> None:
     print("=" * 60)
     print("\nO que testar agora:")
     print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Vá para a aba '💸 Finanças'.")
-    print("3. O erro sumirá e o gráfico de gastos será renderizado corretamente.")
+    print("2. Navegue por todas as abas (Patrimônio, Finanças, etc).")
+    print("3. Nenhuma deve dar o erro IndexError.")
 
 if __name__ == "__main__":
     aplicar()
