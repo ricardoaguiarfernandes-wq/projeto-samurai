@@ -166,9 +166,14 @@ with tab4:
 with tab5:
     st.subheader("🙏 Práticas Espirituais")
     habits = query_all("SELECT h.id, h.name, COALESCE(l.done, 0) AS done FROM habits h LEFT JOIN habit_logs l ON l.habit_id = h.id AND l.log_date = ? WHERE h.pillar = 'Religião' AND h.active = 1", (date.today().isoformat(),))
+    alterou_religiao = False
     for h in habits:
-        if st.checkbox(h["name"], value=bool(h["done"])):
-            execute("INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, 1) ON CONFLICT(habit_id, log_date) DO UPDATE SET done = 1", (h["id"], date.today().isoformat()))
+        novo = st.checkbox(h["name"], value=bool(h["done"]), key=f"religiao_habit_{h['id']}")
+        if novo != bool(h["done"]):
+            execute("INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, ?) ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done", (h["id"], date.today().isoformat(), 1 if novo else 0))
+            alterou_religiao = True
+    if alterou_religiao:
+        st.rerun()
             
     st.divider()
     st.subheader("🙏 Oração do Dia")

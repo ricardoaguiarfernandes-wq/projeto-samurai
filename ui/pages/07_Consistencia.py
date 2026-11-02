@@ -182,7 +182,11 @@ if st.button("Gerar Relatório em PDF", use_container_width=True):
         pdf.cell(0, 10, f"Media de Estresse: {metricas['avg_stress']:.1f}/10", ln=True)
         pdf.cell(0, 10, f"Taxa de Habitos: {metricas['taxa']*100:.0f}%", ln=True)
         
-        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        _pdf_result = pdf.output()
+        if isinstance(_pdf_result, str):
+            pdf_bytes = _pdf_result.encode('latin-1')
+        else:
+            pdf_bytes = bytes(_pdf_result)
         st.download_button(
             label="⬇️ Baixar PDF",
             data=pdf_bytes,

@@ -14,7 +14,6 @@ from core.schema import init_db
 from services.ai import ask_gemini
 
 init_db()
-execute("CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, rate TEXT)")
 
 st.title("💎 Patrimônio")
 tab_ia, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "📊 Ações/FIIs", "🏦 Renda Fixa"])

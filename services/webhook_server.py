@@ -3,8 +3,15 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import sqlite3
 from pathlib import Path
-from flaredantic import FlareTunnel, TunnelConfig
 import threading
+
+try:
+    from flaredantic import FlareTunnel, TunnelConfig
+    HAS_FLARE = True
+except ImportError:
+    HAS_FLARE = False
+    FlareTunnel = None
+    TunnelConfig = None
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "samurai.db"
@@ -35,6 +42,11 @@ async def receive_email(payload: EmailPayload):
 
 def iniciar_tunel():
     """Inicia o túnel Cloudflare em segundo plano e exibe a URL."""
+    if not HAS_FLARE:
+        print("[AVISO] flaredantic nao instalado. Túnel Cloudflare desabilitado.")
+        print("        Webhook funcionara apenas em rede local (http://localhost:8000)")
+        print("        Para habilitar: pip install flaredantic")
+        return None
     try:
         config = TunnelConfig(port=8000)
         tunnel = FlareTunnel(config)
