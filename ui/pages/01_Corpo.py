@@ -4,6 +4,8 @@ import pandas as pd
 import plotly.express as px
 from pathlib import Path
 from datetime import date
+import json
+import re
 
 _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
@@ -21,54 +23,81 @@ hoje = date.today().isoformat()
 divisao = st.selectbox("Divisão de Treino:", ["Full Body", "PPL (Push/Pull/Legs)", "Upper/Lower"])
 
 if divisao == "Full Body":
-    EXERCICIOS = ["Flexão de Braço", "Agachamento", "Barra Fixa", "Prancha (segundos)"]
+    EXERCICIOS_PADRAO = ["Flexão de Braço", "Agachamento", "Barra Fixa", "Prancha (segundos)"]
 elif divisao == "PPL (Push/Pull/Legs)":
     dia = date.today().weekday()
-    if dia in [0, 3]: EXERCICIOS = ["Flexão de Braço", "Desenvolvimento", "Tríceps"]
-    elif dia in [1, 4]: EXERCICIOS = ["Barra Fixa", "Remada", "Rosca Direta"]
-    else: EXERCICIOS = ["Agachamento", "Afundo", "Panturrilha"]
+    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Flexão de Braço", "Desenvolvimento", "Tríceps"]
+    elif dia in [1, 4]: EXERCICIOS_PADRAO = ["Barra Fixa", "Remada", "Rosca Direta"]
+    else: EXERCICIOS_PADRAO = ["Agachamento", "Afundo", "Panturrilha"]
 else:
     dia = date.today().weekday()
-    if dia in [0, 3]: EXERCICIOS = ["Barra Fixa", "Flexão de Braço", "Remada"]
-    else: EXERCICIOS = ["Agachamento", "Afundo", "Prancha (segundos)"]
+    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Barra Fixa", "Flexão de Braço", "Remada"]
+    else: EXERCICIOS_PADRAO = ["Agachamento", "Afundo", "Prancha (segundos)"]
 
 st.subheader(f"🥋 Treino de Hoje: {divisao}")
 
-# GERADOR DE IA
 if st.button("🤖 Gerar Ficha de Treino com IA para Hoje", use_container_width=True):
-    with st.spinner("O Treinador está analisando seu histórico e preparando a ficha..."):
+    with st.spinner("O Treinador está analisando e preparando a ficha..."):
         hist = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER BY log_date DESC LIMIT 15")
         ctx = "".join([f"- {h['log_date']}: {h['exercise_name']} - {h['reps']} reps\n" for h in hist])
-        prompt = f"Atue como treinador de calistenia. Aluno ectomorfo. Divisão: {divisao}. Histórico:\n{ctx}\nSugira a ficha de hoje focando em progressão. Seja direto."
-        st.markdown(f"""<div class="samurai-card" style="border-left-color: #F9A825;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>""", unsafe_allow_html=True)
+
+        prompt = f"Atue como treinador de calistenia. Aluno ectomorfo. Divisão: {divisao}. Histórico:\n{ctx}\n\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\nExemplo:\n```json\n{{\"exercicios\": [\"Flexão Declinada\", \"Pistol Squat\", \"Barra Pronada\", \"Leg Raises\"]}}\n```\nNão escreva nada após o bloco JSON."
+
+        resposta_ia = ask_gemini(prompt)
+
+        try:
+            match = re.search(r'```json\s*(.*?)\s*```', resposta_ia, re.DOTALL)
+            if not match:
+                match = re.search(r'\{.*\}', resposta_ia, re.DOTALL)
+
+            if match:
+                json_str = match.group(1) if '```' in match.group(0) else match.group(0)
+                data = json.loads(json_str)
+                if "exercicios" in data and len(data["exercicios"]) > 0:
+                    st.session_state["exercicios_ia"] = data["exercicios"]
+                    texto_limpo = resposta_ia.replace(match.group(0), "").strip()
+                    st.session_state["texto_ia"] = texto_limpo
+                    st.success("Ficha gerada! Os exercícios foram atualizados no formulário abaixo.")
+            else:
+                st.session_state["texto_ia"] = resposta_ia
+        except Exception as e:
+            st.session_state["texto_ia"] = resposta_ia
+            st.warning("A IA gerou a ficha, mas não foi possível atualizar o formulário automaticamente.")
+
+if st.session_state.get("texto_ia"):
+    st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div style="white-space: pre-wrap;">{st.session_state["texto_ia"]}</div></div>', unsafe_allow_html=True)
+
+    if st.button("🔄 Limpar Ficha da IA e voltar ao padrão"):
+        if "exercicios_ia" in st.session_state: del st.session_state["exercicios_ia"]
+        if "texto_ia" in st.session_state: del st.session_state["texto_ia"]
+        st.rerun()
 
 st.markdown("### Registrar Execução")
+EXERCICIOS_ATUAIS = st.session_state.get("exercicios_ia", EXERCICIOS_PADRAO)
 rows = query_all("SELECT exercise_name, reps, sets FROM exercise_logs WHERE log_date = ?", (hoje,))
 treinos_hoje = {r["exercise_name"]: {"reps": r["reps"], "sets": r["sets"]} for r in rows}
 
 with st.form("form_treino"):
     novos = {}
-    for ex in EXERCICIOS:
+    for ex in EXERCICIOS_ATUAIS:
         val = treinos_hoje.get(ex, {"reps": 0, "sets": 0})
-        
-        # Usando 3 colunas para ficar mais limpo
+
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1: st.markdown(f"**{ex}**")
         with c2:
-            if "Prancha" in ex:
+            if "Prancha" in ex or "Segundos" in ex or "Isometria" in ex:
                 reps = st.number_input("Segundos", min_value=0, value=int(val["reps"]), key=f"r_{ex}")
-                sets = 3 # Prancha fixo em 3 séries
+                sets = 3
                 load = 0
             else:
                 reps = st.number_input("Reps", min_value=0, value=int(val["reps"]), key=f"r_{ex}")
-                sets = st.number_input("Séries", min_value=0, value=3, key=f"s_{ex}") # Padrão 3 séries
-                load = st.number_input("Carga (kg)", min_value=0, value=0, key=f"c_{ex}") # Novo campo de carga
+                sets = st.number_input("Séries", min_value=0, value=3, key=f"s_{ex}")
+                load = st.number_input("Carga (kg)", min_value=0, value=0, key=f"c_{ex}")
             novos[ex] = {"reps": reps, "sets": sets, "load": load}
-            
+
     if st.form_submit_button("💾 Salvar Treino", use_container_width=True):
         for ex, v in novos.items():
             if v["reps"] > 0:
-                # Como a tabela original não tem coluna 'load', salvamos a carga junto nos 'notes' para histórico
                 execute("INSERT INTO exercise_logs (log_date, exercise_name, reps, sets, notes) VALUES (?, ?, ?, ?, ?) ON CONFLICT(log_date, exercise_name) DO UPDATE SET reps=excluded.reps, sets=excluded.sets, notes=excluded.notes", (hoje, ex, v["reps"], v["sets"], f"Carga: {v['load']}kg"))
         st.rerun()
 

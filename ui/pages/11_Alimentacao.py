@@ -15,14 +15,14 @@ st.caption("Nutrição hipercalórica para Ectomorfos.")
 
 refeicoes = {
     "☕ Café da Manhã": [
-        {"prato": "Panqueca Proteica", "ing": "2 ovos, 50g aveia, 1 banana, 1 colher pasta de amendoim.", "prep": "Amasse a banana, misture os ovos e a aveia até formar uma massa. Despeje em frigideira antiaderente em fogo baixo. Doure dos dois lados. Sirva com a pasta de amendoim por cima.", "porque": "Aveia e banana dão carboidratos de digestão lenta, ovos dão proteína e a pasta de amendoim adiciona gordura boa para as calorias."},
+        {"prato": "Panqueca Proteica", "ing": "2 ovos, 50g aveia, 1 banana, 1 colher pasta de amendoim.", "prep": "Amasse a banana, misture os ovos e a aveia. Despeje em frigideira antiaderente em fogo baixo. Doure dos dois lados. Sirva com a pasta de amendoim.", "porque": "Aveia e banana dão carboidratos de digestão lenta, ovos dão proteína e a pasta de amendoim adiciona gordura boa."},
         {"prato": "Ovos Mexidos com Pão", "ing": "3 ovos, 2 fatias pão integral, 30g queijo.", "prep": "Bata os ovos com sal. Em fogo baixo, mexa lentamente até ficarem cremosos. Sirva sobre o pão tostado com o queijo derretido.", "porque": "Proteína de alto valor biológico pela manhã."},
         {"prato": "Vitamina Hipercalórica", "ing": "300ml leite, 1 banana, 30g aveia, 1 scoop whey, 1 colher pasta de amendoim.", "prep": "Bata todos os ingredientes no liquidificador até ficar homogêneo.", "porque": "Fácil de consumir e altíssima densidade calórica."}
     ],
     "🍛 Almoço": [
-        {"prato": "Frango com Arroz e Feijão", "ing": "150g frango, 4 colheres arroz, 1 concha feijão, salada.", "prep": "Tempere o frango com alho e sal, grelhe na frigideira. Cozinhe o arroz e o feijão. Monte o prato com a salada.", "porque": "A combinação clássica brasileira (arroz + feijão) forma uma proteína completa."},
-        {"prato": "Macarrão com Carne Moída", "ing": "150g macarrão, 150g patinho moído, molho de tomate.", "prep": "Cozinhe o macarrão. Refogue a carne moída, adicione o molho de tomate e deixe apurar. Misture ao macarrão.", "porque": "Carboidratos e proteínas essenciais para repor o glicogênio pós-treino."},
-        {"prato": "Tilápia com Purê", "ing": "150g tilápia, 2 batatas, legumes.", "prep": "Asse a tilápia com limão e azeite. Cozinhe as batatas, amasse e adicione leite para fazer o purê. Sirva com legumes.", "porque": "Peixe tem digestão mais leve, ideal se for treinar logo depois."}
+        {"prato": "Frango com Arroz e Feijão", "ing": "150g frango, 4 colheres arroz, 1 concha feijão, salada.", "prep": "Tempere o frango com alho e sal, grelhe. Cozinhe o arroz e o feijão. Monte o prato.", "porque": "A combinação arroz + feijão forma uma proteína completa."},
+        {"prato": "Macarrão com Carne Moída", "ing": "150g macarrão, 150g patinho moído, molho de tomate.", "prep": "Cozinhe o macarrão. Refogue a carne, adicione o molho e deixe apurar. Misture.", "porque": "Carboidratos e proteínas para repor o glicogênio pós-treino."},
+        {"prato": "Tilápia com Purê", "ing": "150g tilápia, 2 batatas, legumes.", "prep": "Asse a tilápia com limão. Cozinhe as batatas, amasse e adicione leite. Sirva com legumes.", "porque": "Peixe tem digestão leve, ideal se for treinar logo depois."}
     ],
     "🥪 Café da Tarde": [
         {"prato": "Sanduíche de Atum", "ing": "2 fatias pão, 1 lata atum, maionese light.", "prep": "Misture o atum com a maionese e recheie o pão.", "porque": "Prático e rico em proteína."},
@@ -40,12 +40,7 @@ for nome, opcoes in refeicoes.items():
     st.subheader(nome)
     escolha = st.selectbox(f"Prato para {nome}:", [o["prato"] for o in opcoes], key=f"s_{nome}")
     det = next(o for o in opcoes if o["prato"] == escolha)
-    st.markdown(f"""
-    <div class="samurai-card" style="padding: 15px; border-left-color: #F9A825;">
-        <b>🛒 Ingredientes:</b><br>{det['ing']}<br><br>
-        <b>👨‍🍳 Modo de Preparo:</b><br>{det['prep']}<br><br>
-        <b style="color: #4CAF50;">💪 Por que é bom para Ectomorfo?</b><br>{det['porque']}
-    </div>""", unsafe_allow_html=True)
+    st.markdown(f'<div class="samurai-card" style="padding: 15px; border-left-color: #F9A825;"><b>🛒 Ingredientes:</b><br>{det["ing"]}<br><br><b>👨‍🍳 Modo de Preparo:</b><br>{det["prep"]}<br><br><b style="color: #4CAF50;">💪 Por que é bom para Ectomorfo?</b><br>{det["porque"]}</div>', unsafe_allow_html=True)
 
 st.divider()
 st.subheader("🤖 Chef Samurai (Criar Nova Receita)")
@@ -55,4 +50,4 @@ with st.form("form_receita"):
     if st.form_submit_button("Gerar Receita com IA", use_container_width=True):
         with st.spinner("Criando..."):
             prompt = f"Crie uma receita hipercalórica para {ref}. Ingredientes: {ing}. Formate com Ingredientes, Preparo e Por que é bom para ectomorfos."
-            st.markdown(f"""<div class="samurai-card">{ask_gemini(prompt)}</div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="samurai-card">{ask_gemini(prompt)}</div>', unsafe_allow_html=True)
