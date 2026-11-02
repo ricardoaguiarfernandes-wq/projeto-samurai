@@ -164,7 +164,8 @@ def query_all(sql: str, params: tuple = ()) -> list[dict]:
         try:
             if is_pg:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                cur.execute(sql, params)
+                if params: cur.execute(sql, params)
+                else: cur.execute(sql)
                 return cur.fetchall()
             else:
                 return [dict(row) for row in conn.execute(sql, params).fetchall()]
@@ -178,7 +179,8 @@ def query_one(sql: str, params: tuple = ()) -> dict | None:
         try:
             if is_pg:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                cur.execute(sql, params)
+                if params: cur.execute(sql, params)
+                else: cur.execute(sql)
                 return cur.fetchone()
             else:
                 row = conn.execute(sql, params).fetchone()

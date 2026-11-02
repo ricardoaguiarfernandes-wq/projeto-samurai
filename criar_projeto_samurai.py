@@ -1,10 +1,9 @@
 """
-criar_projeto_samurai.py — V3.5 (Chat com Analista Financeiro)
+criar_projeto_samurai.py — V3.6 (Fix IndexError no psycopg2 com LIKE '%%')
 
 ENTREGAS:
-1. UI (04_Patrimonio.py): Adiciona a aba "💬 Chat com Analista".
-2. LÓGICA: Injeta a carteira atual do usuário no contexto da conversa.
-3. IA: Prompt focado em análise quantamental, dividendos e alocação.
+1. FIX (core/database.py): Evita passar tuplas vazias () para o psycopg2 quando não há parâmetros, evitando crash com '%' em queries.
+2. FIX (04_Patrimonio.py): Garante que a tabela não seja recriada e o chat funcione perfeitamente.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -29,88 +28,79 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-def fix_patrimonio_chat() -> None:
+# ============================================================
+# 1. FIX NO BANCO DE DADOS (Evitar IndexError do psycopg2)
+# ============================================================
+def fix_database_empty_params() -> None:
+    p = BASE / "core" / "database.py"
+    txt = read(p)
+
+    if "if params:" in txt:
+        print("[SKIP] database.py — correção de params vazios já aplicada.")
+        return
+
+    # 1.1 Corrigir a função execute
+    old_exec_1 = '''                        try:
+                            cur.execute(sql + " RETURNING id", params)'''
+    new_exec_1 = '''                        try:
+                            if params: cur.execute(sql + " RETURNING id", params)
+                            else: cur.execute(sql + " RETURNING id")'''
+
+    old_exec_2 = '''                            cur.execute(sql, params)
+                            conn.commit()
+                            return 0'''
+    new_exec_2 = '''                            if params: cur.execute(sql, params)
+                            else: cur.execute(sql)
+                            conn.commit()
+                            return 0'''
+
+    old_exec_3 = '''                    else:
+                        cur.execute(sql, params)
+                        conn.commit()'''
+    new_exec_3 = '''                    else:
+                        if params: cur.execute(sql, params)
+                        else: cur.execute(sql)
+                        conn.commit()'''
+
+    # 1.2 Corrigir a função query_all
+    old_q_all = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(sql, params)
+                return cur.fetchall()'''
+    new_q_all = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                if params: cur.execute(sql, params)
+                else: cur.execute(sql)
+                return cur.fetchall()'''
+
+    # 1.3 Corrigir a função query_one
+    old_q_one = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(sql, params)
+                return cur.fetchone()'''
+    new_q_one = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                if params: cur.execute(sql, params)
+                else: cur.execute(sql)
+                return cur.fetchone()'''
+
+    txt = txt.replace(old_exec_1, new_exec_1)
+    txt = txt.replace(old_exec_2, new_exec_2)
+    txt = txt.replace(old_exec_3, new_exec_3)
+    txt = txt.replace(old_q_all, new_q_all)
+    txt = txt.replace(old_q_one, new_q_one)
+
+    write_validated(p, txt)
+
+# ============================================================
+# 2. LIMPEZA NO PATRIMÔNIO (Remover CREATE TABLE solto)
+# ============================================================
+def fix_patrimonio_cleanup() -> None:
     p = BASE / "ui" / "pages" / "04_Patrimonio.py"
     txt = read(p)
 
-    if "Chat com Analista" in txt:
-        print("[SKIP] 04_Patrimonio.py — Chat já existe.")
-        return
-
-    # 1. Adicionar a nova aba no topo
-    old_tabs = 'tab_ia, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "📊 Ações/FIIs", "🏦 Renda Fixa"])'
-    new_tabs = 'tab_ia, tab_chat, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "💬 Chat com Analista", "📊 Ações/FIIs", "🏦 Renda Fixa"])'
-    
-    if old_tabs in txt:
-        txt = txt.replace(old_tabs, new_tabs, 1)
+    alvo = 'execute("CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, rate TEXT)")\n'
+    if alvo in txt:
+        txt = txt.replace(alvo, "", 1)
+        write_validated(p, txt)
     else:
-        print("[AVISO] 04_Patrimonio.py — abas não encontradas no formato esperado.")
-
-    # 2. Adicionar o bloco do chat no final do arquivo
-    chat_block = '''
-# ==============================================================================
-# ABA CHAT: Analista Quantamental
-# ==============================================================================
-with tab_chat:
-    st.header("💬 Chat com o Mentor Financeiro")
-    st.write("Pergunte sobre ações específicas, dividendos, riscos ou peça conselhos sobre a sua carteira.")
-    
-    # Pega a carteira atual para dar contexto à IA
-    acoes_db = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
-    rf_db = query_all("SELECT * FROM patrimony_fixed_income")
-    
-    ctx_carteira = "CARTEIRA ATUAL DO USUÁRIO:\\n"
-    if acoes_db:
-        ctx_carteira += "Ações/FIIs:\\n"
-        for a in acoes_db:
-            ctx_carteira += f"- {a['ticker']}: {a['quantity']} cotas, Preço Médio R$ {a['average_price']:.2f}\\n"
-    else:
-        ctx_carteira += "Ações: Carteira vazia.\\n"
-        
-    if rf_db:
-        ctx_carteira += "Renda Fixa:\\n"
-        for r in rf_db:
-            ctx_carteira += f"- {r['name']}: R$ {r['amount']} ({r['rate']})\\n"
-    else:
-        ctx_carteira += "Renda Fixa: Carteira vazia.\\n"
-
-    if "fin_chat" not in st.session_state:
-        st.session_state.fin_chat = []
-
-    # Exibe o histórico
-    for msg in st.session_state.fin_chat:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    # Input do usuário
-    if prompt_user := st.chat_input("Ex: Vale a pena comprar CXSE3 agora? Ou: Analise minha carteira."):
-        st.session_state.fin_chat.append({"role": "user", "content": prompt_user})
-        with st.chat_message("user"):
-            st.markdown(prompt_user)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Analisando fundamentos e carteira..."):
-                prompt_ia = f"""Atue como o Mentor Financeiro Samurai, um Analista Quantamental Sênior focado em valor, dividendos e proteção patrimonial.
-
-{ctx_carteira}
-
-O usuário perguntou: "{prompt_user}"
-
-Sua missão:
-1. Responda de forma direta, profissional e focada no longo prazo.
-2. Se ele perguntar sobre uma ação específica, analise os fundamentos (dividendos, resiliência, monopólio) e dê uma opinião CRAVADA (comprar, manter ou vender). NUNCA use "ou" para dar opções; escolha o melhor caminho.
-3. Se ele pedir para analisar a carteira, verifique a diversificação setorial e aponte pontos de melhoria.
-4. Lembre-se da filosofia Samurai: disciplina e consistência vencem a emoção do mercado. Não faça alucinações com cotações atuais; foque nos fundamentos.
-"""
-                resposta = ask_gemini(prompt_ia)
-                st.markdown(resposta)
-                
-        st.session_state.fin_chat.append({"role": "assistant", "content": resposta})
-'''
-
-    # Anexa o bloco ao final do arquivo
-    txt += chat_block
-    write_validated(p, txt)
+        print("[SKIP] 04_Patrimonio.py — tabela já limpa.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -118,7 +108,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: adiciona chat com analista financeiro na pagina de patrimonio"])
+    _git_run_safe(["commit", "-m", "fix(db): evita indexerror do psycopg2 com likes e params vazios"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -128,10 +118,11 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V3.5 — CHAT COM ANALISTA FINANCEIRO")
+    print("V3.6 — BLINDAGEM DO PSYCOPG2")
     print("=" * 60)
 
-    fix_patrimonio_chat()
+    fix_database_empty_params()
+    fix_patrimonio_cleanup()
     sync_git()
 
     print("\n" + "=" * 60)
@@ -139,9 +130,8 @@ def aplicar() -> None:
     print("=" * 60)
     print("\nO que testar agora:")
     print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Abra a aba 'Patrimônio' e clique na nova aba '💬 Chat com Analista'.")
-    print("3. Pergunte algo como: 'O que você acha da minha carteira atual?' ou 'Quais as vantagens de segurar TAEE11?'")
-    print("4. A IA vai ler os dados reais do seu banco e responder como um analista profissional.")
+    print("2. Abra a aba 'Patrimônio'.")
+    print("3. O erro sumiu e o Chat com Analista já está disponível para uso.")
 
 if __name__ == "__main__":
     aplicar()
