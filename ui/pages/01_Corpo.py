@@ -206,7 +206,7 @@ if st.button("🤖 Gerar Ficha de Treino com IA para Hoje", use_container_width=
     with st.spinner("O Treinador está analisando e preparando a ficha..."):
         hist = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER BY log_date DESC LIMIT 15")
         ctx = "".join([f"- {h['log_date']}: {h['exercise_name']} - {h['reps']} reps\n" for h in hist])
-        prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Peso atual: {peso_atual}kg, Gordura: {bf_atual}%. Divisão: {divisao}. Histórico:\n{ctx}\n\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\nExemplo:\n```json\n{{\"exercicios\": [\"Supino Reto\", \"Agachamento Livre\", \"Puxada Frontal\", \"Rosca Direta\"]}}\n```\nNão escreva nada após o bloco JSON."
+        prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Peso atual: {peso_atual}kg, Gordura: {bf_atual}%. Divisão: {split_salvo}. Foco do Dia: {treino_hoje_nome}. Histórico:\n{ctx}\n\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\nExemplo:\n```json\n{{\"exercicios\": [\"Supino Reto\", \"Agachamento Livre\", \"Puxada Frontal\", \"Rosca Direta\"]}}\n```\nNão escreva nada após o bloco JSON."
         resposta_ia = ask_gemini(prompt)
         try:
             match = re.search(r'```json\s*(.*?)\s*```', resposta_ia, re.DOTALL)

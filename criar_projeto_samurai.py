@@ -1,10 +1,8 @@
 """
-criar_projeto_samurai.py — V3.2 (Treino Automático Baseado na Rotação)
+criar_projeto_samurai.py — V3.3 (Fix NameError no Prompt da IA)
 
 ENTREGAS:
-1. UI (01_Corpo.py): Remove o selectbox de "Divisão de Treino".
-2. LÓGICA: Lê a divisão salva no banco, calcula o dia da rotação e mostra o treino exato.
-3. EXERCÍCIOS: Puxa automaticamente os exercícios corretos para o treino do dia.
+1. FIX (01_Corpo.py): Substitui a variável antiga 'divisao' por 'split_salvo' e 'treino_hoje_nome' no prompt da IA.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -29,105 +27,26 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-def fix_corpo_automatico() -> None:
+def fix_prompt_ia() -> None:
     p = BASE / "ui" / "pages" / "01_Corpo.py"
     txt = read(p)
 
-    if "Foco do Dia" in txt:
-        print("[SKIP] 01_Corpo.py — treino automático já configurado.")
+    if "Foco do Dia: {treino_hoje_nome}" in txt:
+        print("[SKIP] 01_Corpo.py — prompt já corrigido.")
         return
 
-    # O bloco antigo que vai do selectbox até a definição dos exercícios padrão
-    old_block = '''# --- TREINO ---
-divisao = st.selectbox("Divisão de Treino:", [
-    "Calistenia - Full Body",
-    "Calistenia - PPL (Push/Pull/Legs)",
-    "Calistenia - Upper/Lower",
-    "Musculação - Full Body",
-    "Musculação - ABC (Peito/Costas/Pernas)",
-    "Musculação - Push/Pull/Legs"
-])
+    old_prompt = 'prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Peso atual: {peso_atual}kg, Gordura: {bf_atual}%. Divisão: {divisao}. Histórico:\\n{ctx}\\n\\nSugira a ficha de hoje focando em progressão.'
 
-dia = date.today().weekday()
+    new_prompt = 'prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Peso atual: {peso_atual}kg, Gordura: {bf_atual}%. Divisão: {split_salvo}. Foco do Dia: {treino_hoje_nome}. Histórico:\\n{ctx}\\n\\nSugira a ficha de hoje focando em progressão.'
 
-if divisao == "Calistenia - Full Body":
-    EXERCICIOS_PADRAO = ["Flexão de Braço", "Agachamento", "Barra Fixa", "Prancha (segundos)"]
-elif divisao == "Calistenia - PPL (Push/Pull/Legs)":
-    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Flexão de Braço", "Desenvolvimento", "Tríceps"]
-    elif dia in [1, 4]: EXERCICIOS_PADRAO = ["Barra Fixa", "Remada", "Rosca Direta"]
-    else: EXERCICIOS_PADRAO = ["Agachamento", "Afundo", "Panturrilha"]
-elif divisao == "Calistenia - Upper/Lower":
-    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Barra Fixa", "Flexão de Braço", "Remada"]
-    else: EXERCICIOS_PADRAO = ["Agachamento", "Afundo", "Prancha (segundos)"]
-elif divisao == "Musculação - Full Body":
-    EXERCICIOS_PADRAO = ["Supino Reto", "Agachamento Livre", "Puxada Frontal", "Desenvolvimento com Halteres"]
-elif divisao == "Musculação - ABC (Peito/Costas/Pernas)":
-    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Supino Reto", "Supino Inclinado", "Tríceps Testa", "Elevação Lateral"]
-    elif dia in [1, 4]: EXERCICIOS_PADRAO = ["Puxada Frontal", "Remada Curvada", "Rosca Direta", "Rosca Martelo"]
-    else: EXERCICIOS_PADRAO = ["Agachamento Livre", "Leg Press", "Cadeira Extensora", "Mesa Flexora"]
-else: # Musculação - PPL
-    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Supino Reto", "Desenvolvimento Militar", "Tríceps Corda", "Crucifixo"]
-    elif dia in [1, 4]: EXERCICIOS_PADRAO = ["Puxada Frontal", "Remada Baixa", "Rosca Direta", "Rosca Scott"]
-    else: EXERCICIOS_PADRAO = ["Agachamento Livre", "Leg Press", "Cadeira Extensora", "Panturrilha em Pé"]
-
-st.subheader(f"🥋 Treino de Hoje: {divisao}")'''
-
-    new_block = '''# --- TREINO AUTOMÁTICO ---
-settings = query_one("SELECT workout_split, workout_start_date FROM user_settings WHERE id = 1")
-split_salvo = settings["workout_split"] if settings and settings.get("workout_split") else "Calistenia - Full Body"
-start_date = settings.get("workout_start_date") if settings else None
-
-treino_hoje_nome = "Treino Livre"
-if start_date:
-    from datetime import datetime
-    try:
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
-        dias_passados = (date.today() - start_dt).days
-        
-        if "Push/Pull/Legs + Corrida" in split_salvo:
-            seq = ["Push", "Legs", "Pull", "Corrida"]
-        elif "ABC" in split_salvo:
-            seq = ["A (Peito/Ombro/Tríceps)", "B (Costas/Bíceps)", "C (Pernas)", "Descanso"]
-        elif "Calistenia - PPL" in split_salvo:
-            seq = ["Push", "Pull", "Legs", "Descanso"]
-        else:
-            seq = ["Full Body", "Descanso"]
-            
-        treino_hoje_nome = seq[dias_passados % len(seq)]
-    except Exception:
-        pass
-
-st.subheader(f"🥋 Treino de Hoje: {split_salvo}")
-st.info(f"🎯 **Foco do Dia:** {treino_hoje_nome}")
-
-# Define os exercícios com base no treino do dia
-EXERCICIOS_PADRAO = []
-if "Calistenia - Full Body" in split_salvo:
-    EXERCICIOS_PADRAO = ["Flexão de Braço", "Agachamento", "Barra Fixa", "Prancha (segundos)"]
-elif "Calistenia - PPL" in split_salvo:
-    if treino_hoje_nome == "Push": EXERCICIOS_PADRAO = ["Flexão de Braço", "Desenvolvimento", "Tríceps"]
-    elif treino_hoje_nome == "Pull": EXERCICIOS_PADRAO = ["Barra Fixa", "Remada", "Rosca Direta"]
-    elif treino_hoje_nome == "Legs": EXERCICIOS_PADRAO = ["Agachamento", "Afundo", "Panturrilha"]
-    else: EXERCICIOS_PADRAO = ["Descanso Ativo", "Mobilidade"]
-elif "Push/Pull/Legs + Corrida" in split_salvo:
-    if treino_hoje_nome == "Push": EXERCICIOS_PADRAO = ["Supino Reto", "Desenvolvimento Militar", "Tríceps Corda", "Crucifixo"]
-    elif treino_hoje_nome == "Pull": EXERCICIOS_PADRAO = ["Puxada Frontal", "Remada Baixa", "Rosca Direta", "Rosca Scott"]
-    elif treino_hoje_nome == "Legs": EXERCICIOS_PADRAO = ["Agachamento Livre", "Leg Press", "Cadeira Extensora", "Panturrilha em Pé"]
-    elif treino_hoje_nome == "Corrida": EXERCICIOS_PADRAO = ["Corrida Leve (30-40 min)", "Alongamento Pós-Corrida"]
-    else: EXERCICIOS_PADRAO = ["Descanso Total"]
-elif "Musculação - ABC" in split_salvo:
-    if "A" in treino_hoje_nome: EXERCICIOS_PADRAO = ["Supino Reto", "Supino Inclinado", "Tríceps Testa", "Elevação Lateral"]
-    elif "B" in treino_hoje_nome: EXERCICIOS_PADRAO = ["Puxada Frontal", "Remada Curvada", "Rosca Direta", "Rosca Martelo"]
-    elif "C" in treino_hoje_nome: EXERCICIOS_PADRAO = ["Agachamento Livre", "Leg Press", "Cadeira Extensora", "Mesa Flexora"]
-    else: EXERCICIOS_PADRAO = ["Descanso Total"]
-else:
-    EXERCICIOS_PADRAO = ["Flexão de Braço", "Agachamento", "Barra Fixa", "Prancha (segundos)"]'''
-
-    if old_block in txt:
-        txt = txt.replace(old_block, new_block, 1)
+    if old_prompt in txt:
+        txt = txt.replace(old_prompt, new_prompt, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] 01_Corpo.py — bloco antigo de treino não encontrado.")
+        print("[AVISO] 01_Corpo.py — prompt antigo não encontrado. Tentando substituição mais ampla...")
+        # Fallback caso a string tenha diferenças mínimas
+        txt = txt.replace("Divisão: {divisao}. Histórico:", "Divisão: {split_salvo}. Foco do Dia: {treino_hoje_nome}. Histórico:")
+        write_validated(p, txt)
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -135,7 +54,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: treino automatico puxando rotacao salva no banco"])
+    _git_run_safe(["commit", "-m", "fix: corrige NameError no prompt da IA do corpo"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -145,20 +64,19 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V3.2 — TREINO AUTOMÁTICO")
+    print("V3.3 — CORREÇÃO DO PROMPT DA IA")
     print("=" * 60)
 
-    fix_corpo_automatico()
+    fix_prompt_ia()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
     print("\nO que testar agora:")
-    print("1. Espere o Streamlit Cloud atualizar.")
-    print("2. Abra a aba 'Corpo'.")
-    print("3. O selectbox sumiu! Ele agora mostra um aviso verde com o 'Foco do Dia' calculado.")
-    print("4. A lista de exercícios (Flexão, Agachamento, etc) já vem preenchida com o treino correto.")
+    print("1. Espere o Streamlit Cloud atualizar (1-2 minutos).")
+    print("2. Abra a aba 'Corpo' e clique em 'Gerar Ficha de Treino com IA para Hoje'.")
+    print("3. O erro vai sumir e a IA vai montar a ficha sabendo exatamente qual é o Foco do Dia.")
 
 if __name__ == "__main__":
     aplicar()
