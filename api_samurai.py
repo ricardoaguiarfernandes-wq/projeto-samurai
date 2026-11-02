@@ -484,10 +484,30 @@ def process_telegram_message(update: dict):
         else:
             reply("⚠️ Falha ao baixar a imagem do Telegram.")
 
-    # --- MODO 2: TEXTO (RAG Geral ou Diario) ---
+    # --- MODO 2: TEXTO (RAG Geral, Diario ou Crise) ---
     elif "text" in message:
         text = message["text"].strip()
-        if text.lower() in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "eae", "e ai"]:
+        text_lower = text.lower()
+        
+        # MODO 3: CRISE DE DISCIPLINA (SOS)
+        palavras_crise = ["sos", "vontade", "recaida", "recaída", "pornografia", "masturbacao", "masturbação", "impulso", "gatilho"]
+        if any(p in text_lower for p in palavras_crise):
+            reply("🛡️ **Protocolo de Emergência Ativado.**\n\nRespire fundo. O pico da vontade dura de 5 a 30 minutos. Você não precisa ceder a ele.")
+            
+            from services.ai import ask_gemini
+            prompt_crise = f"""Atue como o Mentor de Disciplina do Projeto Samurai.
+O usuário está em crise agora (gatilho detectado). Ele disse: "{text}".
+Sua missão:
+1. Acalme-o imediatamente (tom firme, empático e sem julgamentos).
+2. Lembre-o que a dopamina barata escraviza, mas ele é o mestre.
+3. Dê 3 ações práticas e rápidas (ex: lavar o rosto, sair do ambiente, beber água).
+4. Mantenha a resposta curta (máximo 3 parágrafos) para ele ler rápido.
+"""
+            res = ask_gemini(prompt_crise)
+            reply(res)
+            return
+        
+        if text_lower in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "eae", "e ai"]:
             reply("Saudações, Samurai! 🥋 Como posso te ajudar hoje? (Pode mandar uma foto de comprovante ou uma pergunta).")
             return
 
