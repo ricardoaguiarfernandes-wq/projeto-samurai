@@ -23,6 +23,7 @@ def get_ddl():
         """CREATE TABLE IF NOT EXISTS user_settings (id INTEGER PRIMARY KEY, workout_split TEXT, workout_start_date TEXT);""",
         """CREATE TABLE IF NOT EXISTS discipline (id INTEGER PRIMARY KEY, start_date TEXT, longest_streak INTEGER DEFAULT 0);""",
         """CREATE TABLE IF NOT EXISTS career_missions (id INTEGER PRIMARY KEY AUTOINCREMENT, mission_date TEXT NOT NULL, task TEXT NOT NULL, completed INTEGER DEFAULT 0);""",
+        """CREATE TABLE IF NOT EXISTS manuals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')));""",
         """CREATE TABLE IF NOT EXISTS sos_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, log_date TEXT NOT NULL);""",
         """CREATE TABLE IF NOT EXISTS journal_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",
         """CREATE TABLE IF NOT EXISTS book_progress (id INTEGER PRIMARY KEY AUTOINCREMENT, book_title TEXT NOT NULL UNIQUE, current_page INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, notes TEXT, last_update TEXT NOT NULL DEFAULT (datetime('now')));""",

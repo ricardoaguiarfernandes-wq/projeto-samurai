@@ -2,6 +2,7 @@ import streamlit as st
 import sys
 import json
 import re
+import random
 from datetime import date
 from pathlib import Path
 
@@ -9,7 +10,7 @@ _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
-from core.database import execute, query_all
+from core.database import execute, query_all, query_one
 from core.schema import init_db
 from services.ai import ask_gemini
 
@@ -19,58 +20,160 @@ st.caption("Trilha de evolução: Estagiário de Survey ➔ Surveyor Junior.")
 
 hoje = date.today().isoformat()
 
-# Busca as missões de hoje
-missoes = query_all("SELECT id, task, completed FROM career_missions WHERE mission_date = ?", (hoje,))
+tab_missoes, tab_manuais = st.tabs(["🎯 Missões Diárias", "📚 Base de Conhecimento (Manuais)"])
 
-if not missoes:
-    st.info("🎯 Nenhuma missão definida para hoje. O seu Mentor de Carreira está pronto.")
-    if st.button("🧠 Gerar Missões de Hoje com IA", use_container_width=True):
-        with st.spinner("Traçando estratégia para a sua efetivação..."):
-            prompt = """Atue como um Gestor Sênior e Mentor da área de Survey (levantamentos, inspeções, offshore/onshore).
+with tab_manuais:
+    st.header("Biblioteca Técnica")
+    st.write("Envie os manuais dos equipamentos, procedimentos e normas. A IA usará este material para testar seus conhecimentos.")
+    
+    uploaded_file = st.file_uploader("Upload de Manual (PDF)", type=["pdf"])
+    if uploaded_file is not None:
+        if st.button("📥 Processar e Salvar Manual", use_container_width=True):
+            with st.spinner("Lendo e extraindo texto do PDF..."):
+                try:
+                    import fitz
+                    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+                    text = ""
+                    for page in doc:
+                        text += page.get_text()
+                    
+                    if text.strip():
+                        execute(
+                            "INSERT INTO manuals (title, content) VALUES (?, ?) ON CONFLICT(title) DO UPDATE SET content=excluded.content, uploaded_at=CURRENT_TIMESTAMP",
+                            (uploaded_file.name, text)
+                        )
+                        st.success(f"Manual '{uploaded_file.name}' processado e salvo!")
+                        st.rerun()
+                    else:
+                        st.warning("O PDF não contém texto legível (pode ser escaneado).")
+                except Exception as e:
+                    st.error(f"Erro ao ler PDF: {e}")
+
+    st.divider()
+    st.subheader("📚 Manuais Disponíveis")
+    manuais = query_all("SELECT id, title, uploaded_at FROM manuals ORDER BY uploaded_at DESC")
+    if not manuais:
+        st.info("Nenhum manual cadastrado ainda.")
+    else:
+        for m in manuais:
+            st.markdown(f"- **{m['title']}** (Enviado em: {m['uploaded_at'][:10]})")
+
+with tab_missoes:
+    # --- MISSÕES DIÁRIAS ---
+    missoes = query_all("SELECT id, task, completed FROM career_missions WHERE mission_date = ?", (hoje,))
+
+    if not missoes:
+        st.info("🎯 Nenhuma missão definida para hoje.")
+        if st.button("🧠 Gerar Missões de Hoje com IA", use_container_width=True):
+            with st.spinner("Traçando estratégia para a sua efetivação..."):
+                # Verifica se tem manual para incluir no contexto
+                manuais = query_all("SELECT title FROM manuals")
+                ctx_manual = "Temos manuais de: " + ", ".join([m['title'] for m in manuais]) if manuais else "Nenhum manual cadastrado."
+
+                prompt = f"""Atue como um Gestor Sênior e Mentor da área de Survey.
 O usuário é estagiário e tem a meta de ser efetivado como Surveyor Junior no início do próximo ano.
+{ctx_manual}
 
 Crie 3 missões diárias curtas, práticas e teóricas para o dia de hoje. O foco deve ser:
 1. Habilidade Técnica (ex: leitura de dados, equipamentos, normas, softwares).
 2. Postura Profissional (ex: comunicação com a equipe, proatividade, relatórios).
 3. Visão de Negócio (ex: entender o impacto do survey no projeto).
 
-Sua resposta DEVE ser APENAS um JSON válido com a seguinte estrutura, sem formatação markdown:
-{
-  "missions": [
-    "Missão 1...",
-    "Missão 2...",
-    "Missão 3..."
-  ]
-}
+Se houver manuais cadastrados, a missão 1 deve sugerir a leitura de um tópico específico do manual.
+Sua resposta DEVE ser APENAS um JSON válido com a seguinte estrutura:
+{{"missions": ["Missão 1...", "Missão 2...", "Missão 3..."]}}
 """
-            res = ask_gemini(prompt)
-            m = re.search(r'\{.*\}', res, re.DOTALL)
-            if m:
-                try:
-                    data = json.loads(m.group(0))
-                    for task in data.get("missions", []):
-                        execute("INSERT INTO career_missions (mission_date, task, completed) VALUES (?, ?, 0)", (hoje, task))
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao processar missões: {e}")
-            else:
-                st.error("A IA não retornou o formato esperado. Tente novamente.")
-else:
-    st.subheader("📋 Missões de Hoje")
-    alterou = False
-    for m in missoes:
-        novo = st.checkbox(m["task"], value=bool(m["completed"]), key=f"mission_{m['id']}")
-        if novo != bool(m["completed"]):
-            execute("UPDATE career_missions SET completed = ? WHERE id = ?", (1 if novo else 0, m["id"]))
-            alterou = True
-    
-    if alterou:
-        st.rerun()
+                res = ask_gemini(prompt)
+                m = re.search(r'\{.*\}', res, re.DOTALL)
+                if m:
+                    try:
+                        data = json.loads(m.group(0))
+                        for task in data.get("missions", []):
+                            execute("INSERT INTO career_missions (mission_date, task, completed) VALUES (?, ?, 0)", (hoje, task))
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao processar: {e}")
+    else:
+        st.subheader("📋 Missões de Hoje")
+        alterou = False
+        for m in missoes:
+            novo = st.checkbox(m["task"], value=bool(m["completed"]), key=f"mission_{m['id']}")
+            if novo != bool(m["completed"]):
+                execute("UPDATE career_missions SET completed = ? WHERE id = ?", (1 if novo else 0, m["id"]))
+                alterou = True
+        if alterou:
+            st.rerun()
 
-    if all(m["completed"] for m in missoes):
-        st.success("🏆 Todas as missões concluídas! O Surveyor Junior está cada vez mais perto.")
+        if all(m["completed"] for m in missoes):
+            st.success("🏆 Todas as missões concluídas! O Surveyor Junior está cada vez mais perto.")
 
     st.divider()
-    if st.button("🔄 Gerar Novas Missões (Substituir as de hoje)", use_container_width=True):
-        execute("DELETE FROM career_missions WHERE mission_date = ?", (hoje,))
-        st.rerun()
+    
+    # --- DESAFIO TÉCNICO DO MANUAL ---
+    st.subheader("🧠 Desafio Técnico do Manual")
+    st.write("A IA vai testar seu conhecimento com base nos PDFs que você enviou.")
+    
+    if "desafio_manual" not in st.session_state:
+        st.session_state["desafio_manual"] = None
+
+    if st.button("🎲 Gerar Pergunta do Manual", use_container_width=True):
+        manuais = query_all("SELECT title, content FROM manuals")
+        if not manuais:
+            st.warning("Envie um manual na aba ao lado primeiro.")
+        else:
+            with st.spinner("Lendo o manual e criando uma pergunta..."):
+                # Pega um trecho aleatório de algum manual para não estourar o limite de tokens
+                manual_escolhido = random.choice(manuais)
+                texto_manual = manual_escolhido["content"]
+                # Pega um chunk de 5000 caracteres
+                if len(texto_manual) > 5000:
+                    start_idx = random.randint(0, len(texto_manual) - 5000)
+                    chunk = texto_manual[start_idx:start_idx+5000]
+                else:
+                    chunk = texto_manual
+
+                prompt = f"""Baseado EXCLUSIVAMENTE no seguinte trecho do manual "{manual_escolhido['title']}":
+
+{chunk}
+
+Crie UMA pergunta técnica desafiadora para um estagiário de Survey. A pergunta deve exigir que ele consulte o manual para responder.
+Regras:
+1. NÃO forneça a resposta.
+2. Retorne APENAS a pergunta.
+"""
+                pergunta = ask_gemini(prompt)
+                st.session_state["desafio_manual"] = {
+                    "pergunta": pergunta,
+                    "contexto": chunk,
+                    "manual": manual_escolhido["title"]
+                }
+
+    if st.session_state["desafio_manual"]:
+        desafio = st.session_state["desafio_manual"]
+        st.info(f"**Manual:** {desafio['manual']}\n\n**Pergunta:** {desafio['pergunta']}")
+        
+        resposta_user = st.text_area("Sua resposta (tente adivinhar ou descreva o que encontrou):")
+        
+        if st.button("✅ Corrigir Resposta com a IA"):
+            if not resposta_user.strip():
+                st.warning("Digite sua resposta primeiro.")
+            else:
+                with st.spinner("Avaliando com base no manual..."):
+                    prompt_aval = f"""Atue como um Avaliador Sênior de Survey.
+Baseado EXCLUSIVAMENTE neste trecho do manual:
+{desafio['contexto']}
+
+O usuário respondeu à pergunta "{desafio['pergunta']}" com:
+"{resposta_user}"
+
+Sua missão:
+1. Diga se ele acertou, errou ou chegou perto.
+2. Dê a resposta correta baseada no texto do manual.
+3. Explique de forma didática.
+Seja direto e motivador.
+"""
+                    avaliacao = ask_gemini(prompt_aval)
+                    st.markdown(f'<div class="samurai-card" style="border-left-color: #4CAF50;"><div style="white-space: pre-wrap;">{avaliacao}</div></div>', unsafe_allow_html=True)
+                    if st.button("Limpar Desafio"):
+                        st.session_state["desafio_manual"] = None
+                        st.rerun()
