@@ -23,6 +23,51 @@ init_db()
 st.title("💪 Corpo")
 st.caption("Treino progressivo com carga, histórico e cronômetro interativo.")
 
+with st.expander("🔄 Rotação de Treino (Usada pela IA do Telegram)", expanded=False):
+    st.write("Escolha a sua divisão fixa. O sistema calculará automaticamente qual é o treino de hoje.")
+    
+    settings = query_one("SELECT workout_split, workout_start_date FROM user_settings WHERE id = 1") or {}
+    split_atual = settings.get("workout_split", "Musculação - Push/Pull/Legs + Corrida")
+    
+    OPCOES_SPLIT = [
+        "Musculação - Push/Pull/Legs + Corrida",
+        "Musculação - ABC",
+        "Calistenia - Full Body",
+        "Calistenia - PPL"
+    ]
+    
+    nova_split = st.selectbox("Sua divisão fixa:", OPCOES_SPLIT, index=OPCOES_SPLIT.index(split_atual) if split_atual in OPCOES_SPLIT else 0)
+    
+    if st.button("Salvar Rotação (Reseta contagem para hoje)", use_container_width=True):
+        hoje = date.today().isoformat()
+        execute("INSERT INTO user_settings (id, workout_split, workout_start_date) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET workout_split=excluded.workout_split, workout_start_date=excluded.workout_start_date", (nova_split, hoje))
+        st.success("Rotação salva! O próximo treino será o primeiro da lista.")
+        st.rerun()
+
+    # Lógica matemática de qual treino é hoje
+    if settings and settings.get("workout_start_date"):
+        from datetime import datetime
+        try:
+            start_dt = datetime.strptime(settings["workout_start_date"], "%Y-%m-%d").date()
+            dias = (date.today() - start_dt).days
+            
+            # Define a sequência baseada na escolha
+            if "Push/Pull/Legs + Corrida" in split_atual:
+                seq = ["Push (Peito, Ombro, Tríceps)", "Legs (Pernas)", "Pull (Costas, Bíceps)", "Corrida (Cardio)"]
+            elif "ABC" in split_atual:
+                seq = ["A (Peito, Tríceps, Ombro)", "B (Costas, Bíceps)", "C (Pernas)", "Descanso"]
+            elif "Calistenia - PPL" in split_atual:
+                seq = ["Push", "Pull", "Legs", "Descanso"]
+            else:
+                seq = ["Full Body", "Descanso"]
+                
+            treino_hoje = seq[dias % len(seq)]
+            st.info(f"📅 **Treino calculado para hoje:** {treino_hoje} (Dia {dias} da rotação)")
+        except Exception as e:
+            st.warning(f"Erro ao calcular rotação: {e}")
+    else:
+        st.info("⚠️ Salve a sua rotação acima para que a IA saiba o treino de hoje.")
+
 with st.expander("⚖️ Atualizar Peso e Composição Corporal"):
     with st.form("form_peso"):
         c1, c2 = st.columns(2)

@@ -315,6 +315,29 @@ def daily_brief():
     except Exception:
         pending = []
 
+    # Calcula o treino do dia baseado na rotação
+    treino_hoje = "Treino não configurado"
+    try:
+        settings = query_one("SELECT workout_split, workout_start_date FROM user_settings WHERE id = 1")
+        if settings and settings.get("workout_start_date"):
+            from datetime import datetime
+            start_dt = datetime.strptime(settings["workout_start_date"], "%Y-%m-%d").date()
+            dias = (date.today() - start_dt).days
+            split = settings["workout_split"]
+            
+            if "Push/Pull/Legs + Corrida" in split:
+                seq = ["Push (Peito, Ombro, Tríceps)", "Legs (Pernas)", "Pull (Costas, Bíceps)", "Corrida (Cardio)"]
+            elif "ABC" in split:
+                seq = ["A (Peito, Tríceps, Ombro)", "B (Costas, Bíceps)", "C (Pernas)", "Descanso"]
+            elif "Calistenia - PPL" in split:
+                seq = ["Push", "Pull", "Legs", "Descanso"]
+            else:
+                seq = ["Full Body", "Descanso"]
+                
+            treino_hoje = seq[dias % len(seq)]
+    except Exception as e:
+        print(f"Erro ao calcular treino: {e}")
+
     # Busca as notícias do dia para incluir no brief
     try:
         emails = query_all("SELECT subject, content FROM newsletters_inbox ORDER BY received_at DESC LIMIT 3")
@@ -329,6 +352,7 @@ NOTICIAS DE HOJE (Newsletters):
 {noticias_ctx}
 
 Dados do dia:
+- Treino do Dia (Rotação): {treino_hoje}
 - Check-in: {status["checkin"] or "nao realizado"}
 - Burnout score (7d): {status["burnout"]["score"]}/100 (energia {status["burnout"]["avg_energy"]}, sono {status["burnout"]["avg_sleep"]}h, stress {status["burnout"]["avg_stress"]})
 - Habitos pendentes: {pending if pending else "todos concluidos"}
@@ -347,6 +371,7 @@ Sua resposta DEVE ser um JSON valido com EXATAMENTE estas chaves (sem texto ante
 REGRAS ESTRITAS:
 - NUNCA use "ou". Crave a escolha.
 - Se burnout >= 60, incluir "Descanso e sono" em top_3_priorities.
+- O campo "training" DEVE ser exatamente "{treino_hoje}", adaptando apenas a intensidade baseada no burnout.
 - Versiculo deve ser real (nao invente referencia nem texto).
 - Responda APENAS o JSON. Nada fora do bloco.
 """

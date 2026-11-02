@@ -36,13 +36,17 @@ with tab_financas:
         except: pass
 
     st.divider()
-    st.subheader("🗞️ Últimas Notícias (G1)")
-    try:
-        url = "https://g1.globo.com/rss/g1/"
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-        feed = feedparser.parse(response.content)
-        for entry in feed.entries[:5]: st.markdown(f"- [{entry.title}]({entry.link})")
-    except: st.warning("Erro ao carregar notícias.")
+    st.subheader("🗞️ Últimas Newsletters recebidas")
+    emails = query_all("SELECT subject, sender, content, received_at FROM newsletters_inbox ORDER BY received_at DESC LIMIT 5")
+    
+    if not emails:
+        st.info("Nenhuma newsletter recebida ainda. (O Pipedream enviará assim que chegar um e-mail).")
+    else:
+        for e in emails:
+            with st.expander(f"✉️ {e['subject']} (De: {e['sender']})"):
+                st.caption(f"Recebido em: {e['received_at']}")
+                # Mostra os primeiros 1500 caracteres (já limpos pelo backend)
+                st.markdown(f"<div style='max-height: 300px; overflow-y: auto;'>{e['content'][:1500]}...</div>", unsafe_allow_html=True)
 
 with tab_newsletter:
     st.subheader("📜 Histórico do Samurai Brief")
