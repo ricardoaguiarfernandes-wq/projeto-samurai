@@ -1,11 +1,11 @@
 """
-criar_projeto_samurai.py — V2.0 Full (Gamificação + Vision + RAG)
+criar_projeto_samurai.py — V2.1 (Fixes + Peso + Marmita)
 
 ENTREGAS:
-1. DB: Cria a tabela 'user_stats' para guardar o XP e o Nível.
-2. API: Adiciona XP toda vez que um hábito é concluído.
-3. API: Cria a rota '/webhook/telegram' para receber fotos (Vision) e textos (RAG).
-4. UI: Exibe o Nível e XP no topo da página Home (Dojo).
+1. FIX: Importa ask_gemini em ui/pages/03_Informacao.py (resolve NameError).
+2. DB: Cria a tabela 'body_metrics' em core/schema.py.
+3. UI (Corpo): Adiciona formulário de peso/gordura e envia o peso para a IA Treino.
+4. UI (Alimentação): Adiciona a opção de 'Na hora' vs 'Marmita' e ajusta o Chef IA.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -20,9 +20,6 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
 
-# ============================================================
-# SEGURANÇA — varredura de segredos no stage
-# ============================================================
 def _git_run_safe(args: list[str]) -> subprocess.CompletedProcess:
     r = subprocess.run(["git"] + args, cwd=BASE, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     if r.stdout is None: r.stdout = ""
@@ -30,7 +27,7 @@ def _git_run_safe(args: list[str]) -> subprocess.CompletedProcess:
     return r
 
 def scan_stage_secrets() -> list[str]:
-    problemas: list[str] = []
+    problemas = []
     r = _git_run_safe(["diff", "--cached", "--name-only"])
     for f in (r.stdout or "").splitlines():
         f = f.strip()
@@ -54,216 +51,112 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. CORE/SCHEMA.PY — Tabela de Gamificação
+# 1. FIX INFORMAÇÃO (Import ask_gemini)
 # ============================================================
-def fix_schema_gamification() -> None:
+def fix_informacao_import() -> None:
+    p = BASE / "ui" / "pages" / "03_Informacao.py"
+    txt = read(p)
+    if "from services.ai import ask_gemini" in txt:
+        print("[SKIP] 03_Informacao.py — import já existe.")
+        return
+    
+    old_imp = "from core.schema import init_db\nfrom core.database import query_all"
+    new_imp = "from core.schema import init_db\nfrom core.database import query_all\nfrom services.ai import ask_gemini"
+    if old_imp in txt:
+        txt = txt.replace(old_imp, new_imp, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] 03_Informacao.py — marcador de import não encontrado.")
+
+# ============================================================
+# 2. SCHEMA — Tabela de Peso
+# ============================================================
+def fix_schema_metrics() -> None:
     p = BASE / "core" / "schema.py"
     txt = read(p)
-    if "user_stats" in txt:
-        print("[SKIP] schema.py — user_stats já existe.")
+    if "body_metrics" in txt:
+        print("[SKIP] schema.py — body_metrics já existe.")
         return
-
-    # Adiciona o DDL
+    
     marker = '"""CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, rate TEXT);""",'
-    nova_linha = marker + '\n        """CREATE TABLE IF NOT EXISTS user_stats (id INTEGER PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1);""",'
+    nova_linha = marker + '\n        """CREATE TABLE IF NOT EXISTS body_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, log_date TEXT NOT NULL UNIQUE, weight REAL NOT NULL, body_fat REAL, notes TEXT);""",'
     if marker in txt:
         txt = txt.replace(marker, nova_linha, 1)
-    
-    # Adiciona o Seed na init_db
-    marker_seed = '    for name, pillar, desc in SEED_HABITS:\n        if not query_one("SELECT id FROM habits WHERE name = ?", (name,)):\n            execute("INSERT INTO habits (name, pillar, description) VALUES (?, ?, ?)", (name, pillar, desc))'
-    seed_user = marker_seed + '\n\n    if not query_one("SELECT id FROM user_stats WHERE id = 1"):\n        execute("INSERT INTO user_stats (id, xp, level) VALUES (1, 0, 1)")'
-    if marker_seed in txt:
-        txt = txt.replace(marker_seed, seed_user, 1)
-
-    write_validated(p, txt)
-
-# ============================================================
-# 2. API_SAMURAI.PY — XP, Webhook Telegram (Vision + RAG)
-# ============================================================
-def fix_api_telegram_and_gamification() -> None:
-    p = BASE / "api_samurai.py"
-    txt = read(p)
-
-    if "/webhook/telegram" in txt:
-        print("[SKIP] api_samurai.py — Webhook já configurado.")
-        return
-
-    # 2.1 Adicionar imports necessários
-    txt = txt.replace("import hmac\n", "import hmac\nimport io\nimport requests\n", 1)
-
-    # 2.2 Adicionar lógica de XP no toggle de hábito
-    old_toggle = '''    execute(
-        """
-        INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, ?)
-        ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done
-        """,
-        (habit_id, today_iso, new_val),
-    )
-    return {"habit_id": habit_id, "date": today_iso, "done": bool(new_val)}'''
-    
-    new_toggle = '''    execute(
-        """
-        INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, ?)
-        ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done
-        """,
-        (habit_id, today_iso, new_val),
-    )
-    
-    # Gamificação: ganha 10 XP ao concluir
-    if new_val == 1:
-        try:
-            execute("UPDATE user_stats SET xp = xp + 10 WHERE id = 1")
-        except Exception:
-            pass
-            
-    return {"habit_id": habit_id, "date": today_iso, "done": bool(new_val)}'''
-    
-    if old_toggle in txt:
-        txt = txt.replace(old_toggle, new_toggle, 1)
-
-    # 2.3 Adicionar a rota do Webhook do Telegram (antes do webhook de email)
-    marker_webhook = '''# ============================================================
-# WEBHOOK DE EMAIL (compat — substitui webhook_render antigo)
-# ============================================================'''
-    
-    tg_webhook = '''# ============================================================
-# WEBHOOK DO TELEGRAM (Recebe Fotos e Textos)
-# ============================================================
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-
-@app.post("/webhook/telegram")
-async def receive_telegram(update: dict):
-    if not TELEGRAM_BOT_TOKEN:
-        return {"status": "error", "message": "Token do Telegram nao configurado no Render."}
-    
-    message = update.get("message", {})
-    chat_id = message.get("chat", {}).get("id")
-    if not chat_id:
-        return {"status": "ignored"}
-        
-    def reply(text: str):
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-            timeout=10
-        )
-
-    # --- MODO 1: FOTO (Auto-Categorização de Gastos) ---
-    if "photo" in message:
-        reply("📸 Analisando comprovante e categorizando...")
-        file_id = message["photo"][-1]["file_id"]
-        
-        # Baixa a imagem do Telegram
-        r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}", timeout=10)
-        file_path = r.json().get("result", {}).get("file_path")
-        
-        if file_path:
-            img_bytes = requests.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}", timeout=10).content
-            
-            from services.ai import ask_gemini_vision
-            prompt = """Extraia os dados deste comprovante e retorne APENAS um JSON válido, sem markdown:
-            {"amount": 0.0, "description": "Nome do Local", "category": "Alimentação/Transporte/Lazer/Outros"}
-            Se não for um comprovante, retorne {"error": "not_a_receipt"}."""
-            
-            res = ask_gemini_vision(img_bytes, prompt)
-            m = re.search(r'\\{.*\\}', res, re.DOTALL)
-            
-            if m:
-                try:
-                    data = json.loads(m.group(0))
-                    if "error" in data:
-                        reply("⚠️ Não consegui identificar um comprovante nessa imagem.")
-                    else:
-                        execute(
-                            "INSERT INTO expenses (expense_date, description, amount, category) VALUES (?, ?, ?, ?)",
-                            (date.today().isoformat(), data.get("description", "Desconhecido"), data.get("amount", 0.0), data.get("category", "Outros"))
-                        )
-                        reply(f"✅ Gasto registrado: *{data.get('description')}* \\nValor: R$ {data.get('amount'):.2f} \\nCategoria: {data.get('category')}")
-                except Exception as e:
-                    reply(f"⚠️ Erro ao processar JSON: {e}")
-            else:
-                reply("⚠️ A IA não conseguiu ler o comprovante.")
-        else:
-            reply("⚠️ Falha ao baixar a imagem do Telegram.")
-
-    # --- MODO 2: TEXTO (Memória do Diário / RAG) ---
-    elif "text" in message:
-        text = message["text"]
-        
-        if text.startswith("/start"):
-            reply("🥋 Bem-vindo ao Dojo Digital. Envie uma foto de comprovante ou digite sua dúvida para consultar o diário.")
-            return {"status": "ok"}
-            
-        reply("🧠 Consultando as memórias do seu diário...")
-        entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY entry_date DESC LIMIT 20")
-        
-        if not entries:
-            reply("Ainda não tenho registros no seu diário para consultar.")
-            return {"status": "ok"}
-            
-        ctx = "\\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries])
-        
-        from services.ai import ask_gemini
-        prompt = f"""Atue como meu Mentor Samurai. Baseado APENAS nestes registros recentes do meu diário:
-{ctx}
-
-Responda à minha pergunta: "{text}"
-Se a resposta não estiver nos registros, diga que não encontrou. Seja direto e empático."""
-        
-        res = ask_gemini(prompt)
-        reply(res)
-        
-    return {"status": "ok"}
-
-# ============================================================
-# WEBHOOK DE EMAIL (compat — substitui webhook_render antigo)
-# ============================================================'''
-    
-    if marker_webhook in txt:
-        txt = txt.replace(marker_webhook, tg_webhook, 1)
-    
-    write_validated(p, txt)
-
-# ============================================================
-# 3. HOME.PY — Interface de Gamificação
-# ============================================================
-def fix_home_gamification() -> None:
-    p = BASE / "ui" / "pages" / "00_Home.py"
-    txt = read(p)
-
-    if "Patente" in txt:
-        print("[SKIP] 00_Home.py — Gamificação já aplicada.")
-        return
-
-    old_title = 'st.title("🏯 Dojo")'
-    new_title = '''st.title("🏯 Dojo")
-
-# --- GAMIFICAÇÃO ---
-stats = query_one("SELECT xp FROM user_stats WHERE id = 1") or {"xp": 0}
-xp_total = stats["xp"] if stats else 0
-nivel = (xp_total // 100) + 1
-ranks = {1: "Ronin", 2: "Ashigaru", 3: "Samurai", 4: "Hatamoto", 5: "Daimyo"}
-rank_atual = ranks.get(nivel, "Lenda")
-
-st.markdown(f"""
-<div class="samurai-card" style="display: flex; justify-content: space-between; align-items: center; border-left-color: #F9A825;">
-    <div>
-        <div class="titulo">Patente</div>
-        <div class="valor">Nível {nivel} - {rank_atual}</div>
-    </div>
-    <div style="text-align: right;">
-        <div class="titulo">Experiência</div>
-        <div class="valor">{xp_total} XP</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)'''
-
-    if old_title in txt:
-        txt = txt.replace(old_title, new_title, 1)
         write_validated(p, txt)
 
 # ============================================================
-# 4. SYNC GIT
+# 3. CORPO — UI de Peso e Prompt de Treino
+# ============================================================
+def fix_corpo_weight() -> None:
+    p = BASE / "ui" / "pages" / "01_Corpo.py"
+    txt = read(p)
+
+    if "Atualizar Peso" in txt:
+        print("[SKIP] 01_Corpo.py — UI de peso já existe.")
+        return
+
+    # 3.1 Inserir UI de Peso
+    old_title = 'st.title("💪 Corpo")\nst.caption("Treino progressivo com carga, histórico e cronômetro interativo.")'
+    new_title = '''st.title("💪 Corpo")
+st.caption("Treino progressivo com carga, histórico e cronômetro interativo.")
+
+with st.expander("⚖️ Atualizar Peso e Composição Corporal"):
+    with st.form("form_peso"):
+        c1, c2 = st.columns(2)
+        peso = c1.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=70.0, step=0.1)
+        bf = c2.number_input("Gordura Corporal (%)", min_value=1.0, max_value=50.0, value=15.0, step=0.1)
+        if st.form_submit_button("Salvar Medidas", use_container_width=True):
+            execute("INSERT INTO body_metrics (log_date, weight, body_fat) VALUES (?, ?, ?) ON CONFLICT(log_date) DO UPDATE SET weight=excluded.weight, body_fat=excluded.body_fat", (date.today().isoformat(), peso, bf))
+            st.success("Medidas atualizadas! A IA agora usará esses dados.")
+            st.rerun()
+
+# Busca o peso mais recente para a IA
+_metric = query_one("SELECT weight, body_fat FROM body_metrics ORDER BY log_date DESC LIMIT 1")
+peso_atual = _metric["weight"] if _metric else 70.0
+bf_atual = _metric["body_fat"] if _metric else "N/A"'''
+
+    if old_title in txt:
+        txt = txt.replace(old_title, new_title, 1)
+
+    # 3.2 Atualizar Prompt da IA
+    old_prompt = 'prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Divisão: {divisao}. Histórico:\\n{ctx}\\n\\nSugira a ficha de hoje focando em progressão.'
+    new_prompt = 'prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Peso atual: {peso_atual}kg, Gordura: {bf_atual}%. Divisão: {divisao}. Histórico:\\n{ctx}\\n\\nSugira a ficha de hoje focando em progressão.'
+
+    if old_prompt in txt:
+        txt = txt.replace(old_prompt, new_prompt, 1)
+    
+    write_validated(p, txt)
+
+# ============================================================
+# 4. ALIMENTAÇÃO — Opção Marmita
+# ============================================================
+def fix_alimentacao_marmita() -> None:
+    p = BASE / "ui" / "pages" / "11_Alimentacao.py"
+    txt = read(p)
+
+    if "Para agora" in txt:
+        print("[SKIP] 11_Alimentacao.py — opção de marmita já existe.")
+        return
+
+    # 4.1 Adicionar seletor global
+    old_sub = 'st.subheader("🤖 Chef Samurai (Criar Nova Receita)")'
+    new_sub = '''st.subheader("🤖 Chef Samurai (Criar Nova Receita)")
+tipo_refeicao = st.radio("O destino desta refeição é:", ["Para agora (Na hora)", "Para marmita (Dura +3 dias)"], horizontal=True)'''
+
+    if old_sub in txt:
+        txt = txt.replace(old_sub, new_sub, 1)
+
+    # 4.2 Atualizar Prompt do Chef
+    old_prompt = 'prompt = f"Crie uma receita hipercalórica para {ref}. Ingredientes: {ing}. Formate com Ingredientes, Preparo e Por que é bom para ectomorfos."'
+    new_prompt = 'prompt = f"Crie uma receita hipercalórica para {ref}. O formato é: {tipo_refeicao}. Ingredientes: {ing}. Se for marmita, foque em ingredientes que aguentam dias na geladeira e expliquem como armazenar. Formate com Ingredientes, Preparo e Por que é bom para ectomorfos."'
+
+    if old_prompt in txt:
+        txt = txt.replace(old_prompt, new_prompt, 1)
+    
+    write_validated(p, txt)
+
+# ============================================================
+# 5. SYNC GIT
 # ============================================================
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -280,12 +173,12 @@ def sync_git() -> None:
         sys.exit(1)
     print("[OK] Varredura de segredos: limpa")
 
-    msg = "feat(v2.0): gamificacao (XP), Vision (comprovantes) e RAG (diario) no Telegram"
+    msg = "feat(v2.1): fix import ask_gemini, metricas corporais (peso/bf) e suporte a marmita"
     _git_run_safe(["commit", "-m", msg])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
-        print("[OK] Push concluído! O Render vai atualizar automaticamente.")
+        print("[OK] Push concluído! O Streamlit Cloud vai atualizar automaticamente.")
     else:
         print(f"[ERRO] Push falhou:\n{r.stderr}")
 
@@ -294,13 +187,14 @@ def sync_git() -> None:
 # ============================================================
 def aplicar() -> None:
     print("=" * 60)
-    print("V2.0 FULL — GAMIFICACAO + VISION + RAG")
+    print("V2.1 — FIXES + PESO + MARMITA")
     print("=" * 60)
 
     etapas = [
-        ("Criar tabela de XP (schema.py)", fix_schema_gamification),
-        ("Configurar API e Webhook (api_samurai.py)", fix_api_telegram_and_gamification),
-        ("Exibir Nível na Home (00_Home.py)", fix_home_gamification),
+        ("Corrigir import em 03_Informacao.py", fix_informacao_import),
+        ("Criar tabela body_metrics (schema.py)", fix_schema_metrics),
+        ("Adicionar peso e atualizar IA (01_Corpo.py)", fix_corpo_weight),
+        ("Adicionar opção de marmita (11_Alimentacao.py)", fix_alimentacao_marmita),
     ]
 
     for i, (label, fn) in enumerate(etapas, 1):
@@ -312,12 +206,10 @@ def aplicar() -> None:
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\n⚠️ ULTIMO PASSO MANUAL (OBRIGATÓRIO):")
-    print("Como o Telegram precisa saber para onde enviar as fotos,")
-    print("voce precisa registrar o Webhook. Cole isto no seu PowerShell:")
-    print("\ncurl.exe -F \"url=https://samurai-webhook.onrender.com/webhook/telegram\" https://api.telegram.org/bot<SEU_NOVO_TOKEN_AQUI>/setWebhook")
-    print("\n(Substitua <SEU_NOVO_TOKEN_AQUI> pelo token do BotFather antes de rodar).")
-    print("Se retornar {\"ok\":true}, está tudo pronto!")
+    print("\nO que testar agora no app Streamlit (pode levar 1-2 min para atualizar):")
+    print("1. Acesse a aba 'Informação' e clique no botão de gerar brief (deve funcionar sem erro).")
+    print("2. Acesse 'Corpo' e preencha o seu peso/gordura no topo. Depois gere a ficha de treino com IA e veja se ela cita o seu peso.")
+    print("3. Acesse 'Alimentação', escolha a opção 'Marmita' e gere uma receita. O Chef vai adaptar a receita.")
 
 if __name__ == "__main__":
     aplicar()

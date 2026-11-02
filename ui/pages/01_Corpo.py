@@ -22,6 +22,21 @@ from services.ai import ask_gemini
 init_db()
 st.title("💪 Corpo")
 st.caption("Treino progressivo com carga, histórico e cronômetro interativo.")
+
+with st.expander("⚖️ Atualizar Peso e Composição Corporal"):
+    with st.form("form_peso"):
+        c1, c2 = st.columns(2)
+        peso = c1.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=70.0, step=0.1)
+        bf = c2.number_input("Gordura Corporal (%)", min_value=1.0, max_value=50.0, value=15.0, step=0.1)
+        if st.form_submit_button("Salvar Medidas", use_container_width=True):
+            execute("INSERT INTO body_metrics (log_date, weight, body_fat) VALUES (?, ?, ?) ON CONFLICT(log_date) DO UPDATE SET weight=excluded.weight, body_fat=excluded.body_fat", (date.today().isoformat(), peso, bf))
+            st.success("Medidas atualizadas! A IA agora usará esses dados.")
+            st.rerun()
+
+# Busca o peso mais recente para a IA
+_metric = query_one("SELECT weight, body_fat FROM body_metrics ORDER BY log_date DESC LIMIT 1")
+peso_atual = _metric["weight"] if _metric else 70.0
+bf_atual = _metric["body_fat"] if _metric else "N/A"
 hoje = date.today().isoformat()
 
 # --- RECOMENDADOR E DOWNLOAD DE PODCASTS ---
@@ -123,7 +138,7 @@ if st.button("🤖 Gerar Ficha de Treino com IA para Hoje", use_container_width=
     with st.spinner("O Treinador está analisando e preparando a ficha..."):
         hist = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER BY log_date DESC LIMIT 15")
         ctx = "".join([f"- {h['log_date']}: {h['exercise_name']} - {h['reps']} reps\n" for h in hist])
-        prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Divisão: {divisao}. Histórico:\n{ctx}\n\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\nExemplo:\n```json\n{{\"exercicios\": [\"Supino Reto\", \"Agachamento Livre\", \"Puxada Frontal\", \"Rosca Direta\"]}}\n```\nNão escreva nada após o bloco JSON."
+        prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Peso atual: {peso_atual}kg, Gordura: {bf_atual}%. Divisão: {divisao}. Histórico:\n{ctx}\n\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\nExemplo:\n```json\n{{\"exercicios\": [\"Supino Reto\", \"Agachamento Livre\", \"Puxada Frontal\", \"Rosca Direta\"]}}\n```\nNão escreva nada após o bloco JSON."
         resposta_ia = ask_gemini(prompt)
         try:
             match = re.search(r'```json\s*(.*?)\s*```', resposta_ia, re.DOTALL)

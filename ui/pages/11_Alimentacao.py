@@ -44,10 +44,11 @@ for nome, opcoes in refeicoes.items():
 
 st.divider()
 st.subheader("🤖 Chef Samurai (Criar Nova Receita)")
+tipo_refeicao = st.radio("O destino desta refeição é:", ["Para agora (Na hora)", "Para marmita (Dura +3 dias)"], horizontal=True)
 with st.form("form_receita"):
     ref = st.selectbox("Refeição:", list(refeicoes.keys()))
     ing = st.text_input("O que tem na geladeira?")
     if st.form_submit_button("Gerar Receita com IA", use_container_width=True):
         with st.spinner("Criando..."):
-            prompt = f"Crie uma receita hipercalórica para {ref}. Ingredientes: {ing}. Formate com Ingredientes, Preparo e Por que é bom para ectomorfos."
+            prompt = f"Crie uma receita hipercalórica para {ref}. O formato é: {tipo_refeicao}. Ingredientes: {ing}. Se for marmita, foque em ingredientes que aguentam dias na geladeira e expliquem como armazenar. Formate com Ingredientes, Preparo e Por que é bom para ectomorfos."
             st.markdown(f'<div class="samurai-card">{ask_gemini(prompt)}</div>', unsafe_allow_html=True)

@@ -15,6 +15,7 @@ if str(_p) not in sys.path:
 
 from core.schema import init_db
 from core.database import query_all
+from services.ai import ask_gemini
 
 init_db()
 
