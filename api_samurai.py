@@ -445,6 +445,10 @@ REGRAS ESTRITAS:
 # ============================================================
 # NOTÍCIAS LEGISLATIVAS DIÁRIAS
 # ============================================================
+
+# ============================================================
+# NOTÍCIAS LEGISLATIVAS DIÁRIAS
+# ============================================================
 @app.get("/api/daily-news", dependencies=[Depends(require_token)])
 def daily_news():
     import feedparser
@@ -473,7 +477,6 @@ def daily_news():
     try:
         r = requests.get("https://www.alerj.rj.gov.br/Comunicacao/SalaDeImprensa/Noticias", timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
-        # Procura links que contenham 'Noticia' na URL e tenham texto longo
         for a in soup.find_all("a", href=True):
             if "Noticia" in a["href"] or "noticias" in a["href"]:
                 titulo = a.get_text(strip=True)
@@ -488,7 +491,6 @@ def daily_news():
     try:
         r = requests.get("https://cmmacae.rj.gov.br/noticias/", timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
-        # Tenta pegar h2, h3 ou títulos de links
         for h in soup.find_all(["h2", "h3", "h4"]):
             titulo = h.get_text(strip=True)
             if titulo and len(titulo) > 30:

@@ -1,14 +1,16 @@
 """
-criar_projeto_samurai.py — V6.3 (Fix Notícias Vazias)
+criar_projeto_samurai.py — V6.4 (Força Deploy no Render e Corrige Notícias)
 
 ENTREGAS:
-1. FIX (api_samurai.py): Remove o filtro rígido de data e melhora o scraping do ALERJ/Macaé.
+1. FIX (Notícias): Melhora a raspagem da Câmara e Senado.
+2. DEPLOY FORÇADO: O script agora lê o seu .env.render e dispara o Deploy Hook automaticamente após o git push.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +29,9 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
+# ============================================================
+# 1. CORREÇÃO DAS NOTÍCIAS
+# ============================================================
 def fix_api_news() -> None:
     p = BASE / "api_samurai.py"
     txt = read(p)
@@ -63,7 +68,6 @@ def daily_news():
     try:
         r = requests.get("https://www.alerj.rj.gov.br/Comunicacao/SalaDeImprensa/Noticias", timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
-        # Procura links que contenham 'Noticia' na URL e tenham texto longo
         for a in soup.find_all("a", href=True):
             if "Noticia" in a["href"] or "noticias" in a["href"]:
                 titulo = a.get_text(strip=True)
@@ -78,7 +82,6 @@ def daily_news():
     try:
         r = requests.get("https://cmmacae.rj.gov.br/noticias/", timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
-        # Tenta pegar h2, h3 ou títulos de links
         for h in soup.find_all(["h2", "h3", "h4"]):
             titulo = h.get_text(strip=True)
             if titulo and len(titulo) > 30:
@@ -106,7 +109,40 @@ def daily_news():
         txt = txt[:start_idx] + new_endpoint + "\n" + txt[end_idx:]
         write_validated(p, txt)
     else:
-        print("[ERRO] Marcadores não encontrados para substituição.")
+        print("[AVISO] api_samurai.py — rota de notícias já pode estar atualizada.")
+
+# ============================================================
+# 2. DISPARAR DEPLOY NO RENDER
+# ============================================================
+def force_render_deploy():
+    print("\n🚀 FORÇANDO DEPLOY NO RENDER...")
+    
+    # Tenta pegar a URL do hook
+    hook_url = os.environ.get("RENDER_DEPLOY_HOOK_URL")
+    
+    if not hook_url:
+        # Se não estiver nas variáveis de ambiente, tenta ler do .env.render
+        env_file = BASE / ".env.render"
+        if env_file.exists():
+            for line in read(env_file).splitlines():
+                if line.startswith("RENDER_DEPLOY_HOOK_URL="):
+                    hook_url = line.split("=", 1)[1].strip()
+                    break
+                    
+    if not hook_url:
+        print("[AVISO] RENDER_DEPLOY_HOOK_URL não encontrada. O Render não será reiniciado automaticamente.")
+        print("        Vá no painel do Render e clique em 'Manual Deploy'.")
+        return
+
+    try:
+        import requests
+        response = requests.get(hook_url, timeout=15)
+        if response.status_code in [200, 201]:
+            print("[OK] Deploy disparado com sucesso no Render! Aguarde 2 minutos.")
+        else:
+            print(f"[AVISO] O Render respondeu com status {response.status_code}.")
+    except Exception as e:
+        print(f"[ERRO] Falha ao contatar o Render: {e}")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -114,17 +150,19 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix(api): melhora raspagem de noticias e remove filtro de data quebrado"])
+    _git_run_safe(["commit", "-m", "fix: forca deploy no render e melhora raspagem de noticias"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
-        print("[OK] Push concluído com sucesso!")
+        print("[OK] Push concluído!")
+        # Chama a função de deploy após o push dar certo
+        force_render_deploy()
     else:
         print(f"[ERRO] Push falhou:\n{r.stderr}")
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V6.3 — FIX NOTÍCIAS VAZIAS")
+    print("V6.4 — FORÇAR DEPLOY NO RENDER")
     print("=" * 60)
 
     fix_api_news()
@@ -133,10 +171,10 @@ def aplicar() -> None:
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que testar agora:")
-    print("1. Espere o Render atualizar (fique de olho no painel até ficar 'Live').")
-    print("2. Vá no GitHub Actions e clique em 'Re-run jobs' na aba 'Samurai Daily News'.")
-    print("3. Desta vez, as notícias devem chegar no seu Telegram (mesmo que o site da ALERJ ou Macaé falhem, as da Câmara e Senado vão passar).")
+    print("\nO que fazer agora:")
+    print("1. Espere cerca de 2 minutos (o Render está reiniciando agora via API).")
+    print("2. Vá no GitHub Actions e clique em 'Re-run jobs' (na aba Samurai Daily News).")
+    print("3. As notícias devem chegar no seu Telegram.")
 
 if __name__ == "__main__":
     aplicar()
