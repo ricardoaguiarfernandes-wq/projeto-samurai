@@ -24,11 +24,17 @@ _lock = threading.RLock()
 _pg_pool = None
 
 def get_db_url():
+    # 1) Streamlit Cloud
     try:
         if "SUPABASE_URL" in st.secrets:
             return st.secrets["SUPABASE_URL"]
     except Exception:
         pass
+    # 2) Variavel de ambiente (Render, CI, local)
+    import os
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    if url:
+        return url
     return None
 
 def get_pg_pool():
@@ -43,10 +49,15 @@ def get_pg_pool():
     return _pg_pool
 
 def is_postgres() -> bool:
-    try:
-        return "SUPABASE_URL" in st.secrets and HAS_PG
-    except Exception:
+    if not HAS_PG:
         return False
+    try:
+        if "SUPABASE_URL" in st.secrets:
+            return True
+    except Exception:
+        pass
+    import os
+    return bool(os.environ.get("SUPABASE_URL", "").strip())
 
 def adapt_sql(sql: str, is_pg: bool) -> str:
     if is_pg:

@@ -8,14 +8,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "config.json"
 
 def get_api_key() -> str:
-    # Tenta pegar dos Secrets do Streamlit Cloud (Nuvem)
+    # 1) Streamlit Cloud
     try:
         if "gemini_api_key" in st.secrets:
             return st.secrets["gemini_api_key"]
     except Exception:
         pass
-        
-    # Fallback local (config.json)
+    # 2) Variavel de ambiente (Render, CI, local)
+    import os
+    env_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if env_key:
+        return env_key
+    # 3) Fallback local (config.json)
     if CONFIG_PATH.exists():
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:

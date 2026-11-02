@@ -8,11 +8,8 @@ import requests
 from core.database import execute, query_one, query_all
 
 def get_ddl():
-    is_pg = False
-    try:
-        import streamlit as st
-        is_pg = "SUPABASE_URL" in st.secrets
-    except Exception: pass
+    from core.database import is_postgres
+    is_pg = is_postgres()
 
     ddl_base = [
         """CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, pillar TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));""",
