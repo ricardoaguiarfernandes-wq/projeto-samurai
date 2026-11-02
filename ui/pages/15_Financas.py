@@ -22,7 +22,7 @@ mes_atual = hoje[:7] # Formato YYYY-MM
 
 # --- BUSCA DE DADOS ---
 gastos = query_all("SELECT * FROM expenses ORDER BY expense_date DESC")
-acoes = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
+acoes = query_all("SELECT * FROM portfolio WHERE SUBSTR(ticker, 1, 3) != 'RF:'")
 rf = query_all("SELECT * FROM patrimony_fixed_income")
 
 # Calcula total de gastos no mês
