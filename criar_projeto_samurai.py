@@ -1,9 +1,10 @@
 """
-criar_projeto_samurai.py — V3.4 (Filosofia Iniciante-Avançado e Foco na Corrida)
+criar_projeto_samurai.py — V3.5 (Chat com Analista Financeiro)
 
 ENTREGAS:
-1. UI (01_Corpo.py): Atualiza o prompt da IA para focar 100% no treino do dia (se for Corrida, só fala de corrida). Adiciona a filosofia Iniciante -> Avançado.
-2. API (api_samurai.py): Atualiza o prompt do Brief Diário com a mesma filosofia e adaptação ao dia de Corrida.
+1. UI (04_Patrimonio.py): Adiciona a aba "💬 Chat com Analista".
+2. LÓGICA: Injeta a carteira atual do usuário no contexto da conversa.
+3. IA: Prompt focado em análise quantamental, dividendos e alocação.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -28,59 +29,88 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-# ============================================================
-# 1. CORPO (Prompt de Treino)
-# ============================================================
-def fix_corpo_prompt() -> None:
-    p = BASE / "ui" / "pages" / "01_Corpo.py"
+def fix_patrimonio_chat() -> None:
+    p = BASE / "ui" / "pages" / "04_Patrimonio.py"
     txt = read(p)
 
-    if "Filosofia Samurai (Iniciante -> Avançado)" in txt:
-        print("[SKIP] 01_Corpo.py — prompt já atualizado.")
+    if "Chat com Analista" in txt:
+        print("[SKIP] 04_Patrimonio.py — Chat já existe.")
         return
 
-    old_prompt = 'prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Peso atual: {peso_atual}kg, Gordura: {bf_atual}%. Divisão: {split_salvo}. Foco do Dia: {treino_hoje_nome}. Histórico:\\n{ctx}\\n\\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\\nExemplo:\\n```json\\n{{\\"exercicios\\": [\\"Supino Reto\\", \\"Agachamento Livre\\", \\"Puxada Frontal\\", \\"Rosca Direta\\"]}}\\n```\\nNão escreva nada após o bloco JSON."'
-
-    new_prompt = 'prompt = f"""Atue como o Treinador Samurai. Aluno ectomorfo. Peso: {peso_atual}kg, BF: {bf_atual}%. Divisão atual: {split_salvo}. O Foco do Dia é: {treino_hoje_nome}. Histórico recente:\\n{ctx}\\n\\nFilosofia Samurai (Iniciante -> Avançado): O aluno está no nível INICIANTE. Seu papel é guiá-lo com exercícios e intensidade de iniciante, mas sempre preparando o terreno para o nível AVANÇADO. Foco em evolução constante.\\n\\nREGRAS DO TREINO DE HOJE:\\n1. Se o Foco for "Corrida": Crie um treino de corrida/cardio para iniciantes (ex: intervalos de caminhada e corrida leve). NÃO sugira musculação nesse dia.\\n2. Se o Foco for Musculação (Push/Pull/Legs): Crie a ficha de musculação correspondente.\\n3. Seja direto e motivador.\\n\\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\\nExemplo:\\n```json\\n{{\\"exercicios\\": [\\"Corrida Leve\\", \\"Caminhada\\"]}}\\n```\\nNão escreva nada após o bloco JSON."""'
-
-    if old_prompt in txt:
-        txt = txt.replace(old_prompt, new_prompt, 1)
-        write_validated(p, txt)
+    # 1. Adicionar a nova aba no topo
+    old_tabs = 'tab_ia, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "📊 Ações/FIIs", "🏦 Renda Fixa"])'
+    new_tabs = 'tab_ia, tab_chat, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "💬 Chat com Analista", "📊 Ações/FIIs", "🏦 Renda Fixa"])'
+    
+    if old_tabs in txt:
+        txt = txt.replace(old_tabs, new_tabs, 1)
     else:
-        print("[AVISO] 01_Corpo.py — prompt antigo não encontrado. Verifique se há diferenças de aspas.")
+        print("[AVISO] 04_Patrimonio.py — abas não encontradas no formato esperado.")
 
-# ============================================================
-# 2. API BRIEF (Prompt do Telegram)
-# ============================================================
-def fix_api_brief_prompt() -> None:
-    p = BASE / "api_samurai.py"
-    txt = read(p)
-
-    if "Filosofia Samurai:" in txt:
-        print("[SKIP] api_samurai.py — prompt já atualizado.")
-        return
-
-    old_rules = '''REGRAS ESTRITAS:
-- NUNCA use "ou". Crave a escolha.
-- Se burnout >= 60, incluir "Descanso e sono" em top_3_priorities.
-- O campo "training" DEVE ser exatamente "{treino_hoje}", adaptando apenas a intensidade baseada no burnout.
-- Versiculo deve ser real (nao invente referencia nem texto).
-- Responda APENAS o JSON. Nada fora do bloco.'''
-
-    new_rules = '''REGRAS ESTRITAS:
-- NUNCA use "ou". Crave a escolha.
-- Se burnout >= 60, incluir "Descanso e sono" em top_3_priorities.
-- O campo "training" DEVE ser exatamente "{treino_hoje}". 
-- Filosofia Samurai: O usuário está no nível INICIANTE. O treino recomendado deve ser para iniciantes, com foco em evolução para o nível AVANÇADO.
-- Se o treino for "Corrida", foque apenas em dicas de corrida/cardio. NÃO mencione musculação ou dicas de "ectomorfo".
-- Versiculo deve ser real (nao invente referencia nem texto).
-- Responda APENAS o JSON. Nada fora do bloco.'''
-
-    if old_rules in txt:
-        txt = txt.replace(old_rules, new_rules, 1)
-        write_validated(p, txt)
+    # 2. Adicionar o bloco do chat no final do arquivo
+    chat_block = '''
+# ==============================================================================
+# ABA CHAT: Analista Quantamental
+# ==============================================================================
+with tab_chat:
+    st.header("💬 Chat com o Mentor Financeiro")
+    st.write("Pergunte sobre ações específicas, dividendos, riscos ou peça conselhos sobre a sua carteira.")
+    
+    # Pega a carteira atual para dar contexto à IA
+    acoes_db = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
+    rf_db = query_all("SELECT * FROM patrimony_fixed_income")
+    
+    ctx_carteira = "CARTEIRA ATUAL DO USUÁRIO:\\n"
+    if acoes_db:
+        ctx_carteira += "Ações/FIIs:\\n"
+        for a in acoes_db:
+            ctx_carteira += f"- {a['ticker']}: {a['quantity']} cotas, Preço Médio R$ {a['average_price']:.2f}\\n"
     else:
-        print("[AVISO] api_samurai.py — regras do prompt não encontradas.")
+        ctx_carteira += "Ações: Carteira vazia.\\n"
+        
+    if rf_db:
+        ctx_carteira += "Renda Fixa:\\n"
+        for r in rf_db:
+            ctx_carteira += f"- {r['name']}: R$ {r['amount']} ({r['rate']})\\n"
+    else:
+        ctx_carteira += "Renda Fixa: Carteira vazia.\\n"
+
+    if "fin_chat" not in st.session_state:
+        st.session_state.fin_chat = []
+
+    # Exibe o histórico
+    for msg in st.session_state.fin_chat:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Input do usuário
+    if prompt_user := st.chat_input("Ex: Vale a pena comprar CXSE3 agora? Ou: Analise minha carteira."):
+        st.session_state.fin_chat.append({"role": "user", "content": prompt_user})
+        with st.chat_message("user"):
+            st.markdown(prompt_user)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Analisando fundamentos e carteira..."):
+                prompt_ia = f"""Atue como o Mentor Financeiro Samurai, um Analista Quantamental Sênior focado em valor, dividendos e proteção patrimonial.
+
+{ctx_carteira}
+
+O usuário perguntou: "{prompt_user}"
+
+Sua missão:
+1. Responda de forma direta, profissional e focada no longo prazo.
+2. Se ele perguntar sobre uma ação específica, analise os fundamentos (dividendos, resiliência, monopólio) e dê uma opinião CRAVADA (comprar, manter ou vender). NUNCA use "ou" para dar opções; escolha o melhor caminho.
+3. Se ele pedir para analisar a carteira, verifique a diversificação setorial e aponte pontos de melhoria.
+4. Lembre-se da filosofia Samurai: disciplina e consistência vencem a emoção do mercado. Não faça alucinações com cotações atuais; foque nos fundamentos.
+"""
+                resposta = ask_gemini(prompt_ia)
+                st.markdown(resposta)
+                
+        st.session_state.fin_chat.append({"role": "assistant", "content": resposta})
+'''
+
+    # Anexa o bloco ao final do arquivo
+    txt += chat_block
+    write_validated(p, txt)
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -88,7 +118,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: aplica filosofia iniciante-avancado e foco exclusivo no treino do dia"])
+    _git_run_safe(["commit", "-m", "feat: adiciona chat com analista financeiro na pagina de patrimonio"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -98,21 +128,20 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V3.4 — FILOSOFIA INICIANTE E FOCO NA CORRIDA")
+    print("V3.5 — CHAT COM ANALISTA FINANCEIRO")
     print("=" * 60)
 
-    fix_corpo_prompt()
-    fix_api_brief_prompt()
+    fix_patrimonio_chat()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
     print("\nO que testar agora:")
-    print("1. Espere o Streamlit e o Render atualizarem (1-2 min).")
-    print("2. Na aba 'Corpo', force uma simulação de dia de Corrida (se hoje não for o 4º dia).")
-    print("3. Clique em 'Gerar Ficha de Treino com IA' e veja se a IA foca 100% em corrida para iniciante.")
-    print("4. Amanhã, veja se o Brief do Telegram seguiu essa mesma regra.")
+    print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
+    print("2. Abra a aba 'Patrimônio' e clique na nova aba '💬 Chat com Analista'.")
+    print("3. Pergunte algo como: 'O que você acha da minha carteira atual?' ou 'Quais as vantagens de segurar TAEE11?'")
+    print("4. A IA vai ler os dados reais do seu banco e responder como um analista profissional.")
 
 if __name__ == "__main__":
     aplicar()

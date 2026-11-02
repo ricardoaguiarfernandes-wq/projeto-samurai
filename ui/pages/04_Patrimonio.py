@@ -16,7 +16,7 @@ from services.ai import ask_gemini
 init_db()
 
 st.title("💎 Patrimônio")
-tab_ia, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "📊 Ações/FIIs", "🏦 Renda Fixa"])
+tab_ia, tab_chat, tab_acoes, tab_rf = st.tabs(["🤖 Consultor Quantamental", "💬 Chat com Analista", "📊 Ações/FIIs", "🏦 Renda Fixa"])
 
 def obter_metricas_profundas(ticker):
     ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
@@ -120,3 +120,62 @@ with tab_rf:
     st.divider()
     for rf in query_all("SELECT * FROM patrimony_fixed_income"):
         st.markdown(f'<div class="samurai-card" style="border-left-color: #2196F3;"><b>{rf["name"]}</b> - R$ {rf["amount"]:.2f} ({rf["rate"]})</div>', unsafe_allow_html=True)
+
+# ==============================================================================
+# ABA CHAT: Analista Quantamental
+# ==============================================================================
+with tab_chat:
+    st.header("💬 Chat com o Mentor Financeiro")
+    st.write("Pergunte sobre ações específicas, dividendos, riscos ou peça conselhos sobre a sua carteira.")
+    
+    # Pega a carteira atual para dar contexto à IA
+    acoes_db = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
+    rf_db = query_all("SELECT * FROM patrimony_fixed_income")
+    
+    ctx_carteira = "CARTEIRA ATUAL DO USUÁRIO:\n"
+    if acoes_db:
+        ctx_carteira += "Ações/FIIs:\n"
+        for a in acoes_db:
+            ctx_carteira += f"- {a['ticker']}: {a['quantity']} cotas, Preço Médio R$ {a['average_price']:.2f}\n"
+    else:
+        ctx_carteira += "Ações: Carteira vazia.\n"
+        
+    if rf_db:
+        ctx_carteira += "Renda Fixa:\n"
+        for r in rf_db:
+            ctx_carteira += f"- {r['name']}: R$ {r['amount']} ({r['rate']})\n"
+    else:
+        ctx_carteira += "Renda Fixa: Carteira vazia.\n"
+
+    if "fin_chat" not in st.session_state:
+        st.session_state.fin_chat = []
+
+    # Exibe o histórico
+    for msg in st.session_state.fin_chat:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Input do usuário
+    if prompt_user := st.chat_input("Ex: Vale a pena comprar CXSE3 agora? Ou: Analise minha carteira."):
+        st.session_state.fin_chat.append({"role": "user", "content": prompt_user})
+        with st.chat_message("user"):
+            st.markdown(prompt_user)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Analisando fundamentos e carteira..."):
+                prompt_ia = f"""Atue como o Mentor Financeiro Samurai, um Analista Quantamental Sênior focado em valor, dividendos e proteção patrimonial.
+
+{ctx_carteira}
+
+O usuário perguntou: "{prompt_user}"
+
+Sua missão:
+1. Responda de forma direta, profissional e focada no longo prazo.
+2. Se ele perguntar sobre uma ação específica, analise os fundamentos (dividendos, resiliência, monopólio) e dê uma opinião CRAVADA (comprar, manter ou vender). NUNCA use "ou" para dar opções; escolha o melhor caminho.
+3. Se ele pedir para analisar a carteira, verifique a diversificação setorial e aponte pontos de melhoria.
+4. Lembre-se da filosofia Samurai: disciplina e consistência vencem a emoção do mercado. Não faça alucinações com cotações atuais; foque nos fundamentos.
+"""
+                resposta = ask_gemini(prompt_ia)
+                st.markdown(resposta)
+                
+        st.session_state.fin_chat.append({"role": "assistant", "content": resposta})
