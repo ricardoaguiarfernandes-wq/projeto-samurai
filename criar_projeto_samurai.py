@@ -1,5 +1,5 @@
 """
-aplicar_academia.py — Corrige layout de séries e adiciona recomendações de podcasts.
+aplicar_academia.py — Adiciona opção de baixar o áudio do podcast localmente.
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from datetime import date
 import json
 import re
 import time
+import os
+import tempfile
 import streamlit.components.v1 as components
 
 _p = Path(__file__).resolve().parents[2]
@@ -34,19 +36,75 @@ st.title("💪 Corpo")
 st.caption("Treino progressivo com carga, histórico e cronômetro interativo.")
 hoje = date.today().isoformat()
 
-# --- RECOMENDADOR DE PODCASTS ---
-with st.expander("🎧 Podcasts para o Treino (Recomendação IA)", expanded=False):
-    st.write("Escolha um tema e o Mentor sugere 3 opções de podcasts para ouvir durante o treino.")
-    tema_podcast = st.selectbox("Tema do Podcast:", ["Motivação e Disciplina", "Filosofia e Reflexão", "Finanças e Negócios", "História e Geopolítica", "Foco e Alta Performance", "Música Clássica / Épica"])
+# --- RECOMENDADOR E DOWNLOAD DE PODCASTS ---
+with st.expander("🎧 Podcasts para o Treino (Recomendação IA + Download)", expanded=False):
+    st.write("Escolha um tema e o Mentor sugere 3 opções. Para baixar no seu PC, cole o link do YouTube ou do MP3 abaixo.")
+    tema_podcast = st.selectbox("Tema do Podcast:", ["Motivacional e Disciplina", "Filosofia e Reflexão", "Finanças e Negócios", "História e Geopolítica", "Foco e Alta Performance", "Música Épica para Treino"])
     
     if st.button("🎙️ Sugerir 3 Podcasts", use_container_width=True):
         with st.spinner("Buscando recomendações..."):
-            prompt = f"Atue como um curador de conteúdo. Sugira 3 episódios ou podcasts focados em '{tema_podcast}' que sejam ótimos para ouvir durante um treino de musculação. Para cada um, forneça: Nome do Podcast, Título do Episódio (ou assunto), uma breve descrição e o motivo de ser bom para treinar."
-            sugestoes = ask_gemini(prompt)
-            st.markdown(f'<div class="samurai-card" style="border-left-color: #9C27B0;"><div style="white-space: pre-wrap;">{sugestoes}</div></div>', unsafe_allow_html=True)
+            prompt = f"Atue como curador. Sugira 3 episódios ou podcasts focados em '{tema_podcast}' para ouvir treinando. Dê o nome, um resumo e por que é bom."
+            st.markdown(f'<div class="samurai-card" style="border-left-color: #9C27B0;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown("**⬇️ Baixar Áudio para o PC**")
+    link_podcast = st.text_input("Cole o link do YouTube (vídeo do podcast) ou link direto do MP3:")
+    
+    if st.button("Preparar Download", use_container_width=True) and link_podcast:
+        with st.spinner("Baixando áudio... (Isso pode demorar alguns minutos)"):
+            try:
+                if "youtube.com" in link_podcast or "youtu.be" in link_podcast:
+                    import yt_dlp
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
+                            'quiet': True,
+                            'noplaylist': True,
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                        }
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = ydl.extract_info(link_podcast, download=True)
+                            # Após a conversão, o arquivo estará em mp3
+                            mp3_filename = ydl.prepare_filename(info).rsplit('.', 1)[0] + '.mp3'
+                            mp3_path = os.path.join(tmpdir, mp3_filename)
+                            
+                            # Lê o arquivo em memória para o botão de download
+                            with open(mp3_path, "rb") as f:
+                                audio_bytes = f.read()
+                            
+                            st.success(f"Áudio pronto: {info.get('title', 'Podcast')}")
+                            st.download_button(
+                                label="💾 Salvar MP3 no Computador",
+                                data=audio_bytes,
+                                file_name=f"{info.get('title', 'Podcast')}.mp3",
+                                mime="audio/mpeg",
+                                use_container_width=True
+                            )
+                else:
+                    # Se for um link direto de MP3
+                    import requests
+                    res = requests.get(link_podcast)
+                    if res.status_code == 200:
+                        st.download_button(
+                            label="💾 Salvar MP3 no Computador",
+                            data=res.content,
+                            file_name="podcast.mp3",
+                            mime="audio/mpeg",
+                            use_container_width=True
+                        )
+                    else:
+                        st.error("Falha ao baixar o MP3. Verifique o link.")
+            except Exception as e:
+                st.error(f"Erro ao preparar o download (O FFmpeg está instalado?): {e}")
 
 st.divider()
 
+# --- TREINO ---
 divisao = st.selectbox("Divisão de Treino:", [
     "Calistenia - Full Body",
     "Calistenia - PPL (Push/Pull/Legs)",
@@ -115,7 +173,7 @@ def start_timer():
 
 if st.session_state.get("timer_active"):
     elapsed = time.time() - st.session_state.get("timer_start", 0)
-    remain = max(0, 150 - int(elapsed)) # 2:30 = 150 segundos
+    remain = max(0, 150 - int(elapsed))
     if remain > 0:
         components.html(f'''
             <div id="timer" style="font-size: 48px; color: #8B0000; text-align: center; font-family: sans-serif; font-weight: bold; margin-top: 10px;">{remain//60:02d}:{remain%60:02d}</div>
@@ -143,8 +201,6 @@ if st.session_state.get("timer_active"):
 st.markdown("### Registrar Execução")
 
 EXERCICIOS_ATUAIS = st.session_state.get("exercicios_ia", EXERCICIOS_PADRAO)
-
-# Carrega dados salvos hoje
 rows = query_all("SELECT exercise_name, notes FROM exercise_logs WHERE log_date = ?", (hoje,))
 treinos_hoje = {}
 for r in rows:
@@ -154,8 +210,6 @@ for r in rows:
 
 for ex in EXERCICIOS_ATUAIS:
     st.markdown(f"#### {ex}")
-    
-    # CABEÇALHO EXPLICATIVO
     h1, h2, h3 = st.columns([1, 1, 1])
     h1.caption("✅ Feito")
     h2.caption("🔄 Reps")
@@ -169,7 +223,6 @@ for ex in EXERCICIOS_ATUAIS:
         set_num = s["set"]
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
-            # O on_change dispara o cronômetro na hora que clicar
             st.checkbox(f"Série {set_num}", value=s["done"], key=f"chk_{ex}_{set_num}", on_change=start_timer)
         with c2:
             st.number_input("Reps", min_value=0, value=int(s["reps"]), key=f"reps_{ex}_{set_num}", label_visibility="collapsed")
@@ -198,7 +251,7 @@ if st.button("💾 Salvar Treino Completo", use_container_width=True):
             execute("INSERT INTO exercise_logs (log_date, exercise_name, reps, sets, notes) VALUES (?, ?, ?, ?, ?) ON CONFLICT(log_date, exercise_name) DO UPDATE SET reps=excluded.reps, sets=excluded.sets, notes=excluded.notes", (hoje, ex, total_reps, total_sets, notes_str))
             
     st.success("Treino registrado com sucesso!")
-    st.session_state["timer_active"] = False # Para o timer
+    st.session_state["timer_active"] = False
     time.sleep(1)
     st.rerun()
 
@@ -220,7 +273,7 @@ def _run(cmd):
 
 def aplicar():
     print("=" * 60)
-    print("⚔️  CORRIGINDO LAYOUT E ADICIONANDO PODCASTS")
+    print("⚔️  ADICIONANDO DOWNLOAD DE PODCAST E CORRIGINDO LAYOUT")
     print("=" * 60)
     
     cam = "ui/pages/01_Corpo.py"
@@ -234,7 +287,7 @@ def aplicar():
 
     print("\n☁️  SINCRONIZANDO COM O GITHUB")
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Fix: Layout das series (cabecalho) e Feat: Recomendador de Podcasts"])
+    _run(["git", "commit", "-m", "Feat: Download de podcasts via YouTube/MP3"])
     _run(["git", "push", "origin", "main"])
     print("[OK] Push concluído. O Streamlit vai atualizar em instantes.")
     print("=" * 60)
