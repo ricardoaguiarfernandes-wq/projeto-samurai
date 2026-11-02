@@ -363,6 +363,16 @@ REGRAS ESTRITAS:
         txt = ""
 
     brief["text"] = txt
+    
+    # Salva no banco para aparecer no Streamlit
+    try:
+        execute(
+            "INSERT INTO daily_briefs (brief_date, content) VALUES (?, ?) ON CONFLICT(brief_date) DO UPDATE SET content=excluded.content",
+            (today_iso, txt)
+        )
+    except Exception as e:
+        print(f"Erro ao salvar brief no banco: {e}")
+
     return brief
 
 

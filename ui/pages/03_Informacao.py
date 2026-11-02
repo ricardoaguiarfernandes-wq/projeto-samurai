@@ -45,26 +45,22 @@ with tab_financas:
     except: st.warning("Erro ao carregar notícias.")
 
 with tab_newsletter:
-    emails = query_all("SELECT * FROM newsletters_inbox ORDER BY received_at DESC LIMIT 5")
+    st.subheader("📜 Histórico do Samurai Brief")
+    briefs = query_all("SELECT * FROM daily_briefs ORDER BY brief_date DESC LIMIT 7")
     
-    if st.button("📰 Gerar 'The Samurai Brief' do Dia (IA)", use_container_width=True):
-        with st.spinner("Lendo notícias e gerando o Brief..."):
-            from bs4 import BeautifulSoup
-            texto = ""
-            for e in emails[:3]:
-                soup = BeautifulSoup(e['content'], "html.parser")
-                texto += f"--- {e['subject']} ---\n{soup.get_text(strip=True)}\n"
-            
-            if not texto:
-                texto = "Nenhuma newsletter importada. Crie um brief baseado nas principais notícias do dia (finanças, tecnologia, geopolítica)."
-                
-            prompt = f"Atue como editor da newsletter The Hustle. Resuma os pontos principais:\n{texto}"
-            resumo = ask_gemini(prompt)
-            st.markdown(f"""<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Edição de Hoje</div><div style="white-space: pre-wrap;">{resumo}</div></div>""", unsafe_allow_html=True)
-            
+    if not briefs:
+        st.info("Nenhum Brief gerado ainda. O Telegram deve enviar o primeiro amanhã às 6h.")
+    else:
+        for b in briefs:
+            with st.expander(f"📅 Brief de {b['brief_date']}"):
+                st.markdown(f'<div class="samurai-card" style="border-left-color: #8B0000;"><div style="white-space: pre-wrap;">{b["content"]}</div></div>', unsafe_allow_html=True)
+
+    st.divider()
+    st.subheader("📥 Caixa de Entrada (E-mails Brutos)")
+    emails = query_all("SELECT * FROM newsletters_inbox ORDER BY received_at DESC LIMIT 5")
     if not emails:
-        st.info("Nenhuma newsletter recebida ainda. O botão acima gerará um brief com notícias gerais.")
+        st.caption("Nenhum e-mail recebido via Power Automate.")
     else:
         for e in emails:
             with st.expander(f"✉️ {e['subject']}"):
-                st.markdown(f"<div style='max-height: 400px; overflow-y: auto;'>{e['content']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='max-height: 300px; overflow-y: auto;'>{e['content']}</div>", unsafe_allow_html=True)
