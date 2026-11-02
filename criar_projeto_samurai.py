@@ -1,5 +1,5 @@
 """
-aplicar_academia.py — Adiciona opção de baixar o áudio do podcast localmente.
+criar_projeto_samurai.py — Adiciona links de busca do YouTube nos podcasts.
 """
 from __future__ import annotations
 
@@ -38,12 +38,14 @@ hoje = date.today().isoformat()
 
 # --- RECOMENDADOR E DOWNLOAD DE PODCASTS ---
 with st.expander("🎧 Podcasts para o Treino (Recomendação IA + Download)", expanded=False):
-    st.write("Escolha um tema e o Mentor sugere 3 opções. Para baixar no seu PC, cole o link do YouTube ou do MP3 abaixo.")
+    st.write("Escolha um tema e o Mentor sugere 3 opções com links de busca. Para baixar, clique no link, copie a URL do YouTube e cole abaixo.")
     tema_podcast = st.selectbox("Tema do Podcast:", ["Motivacional e Disciplina", "Filosofia e Reflexão", "Finanças e Negócios", "História e Geopolítica", "Foco e Alta Performance", "Música Épica para Treino"])
     
     if st.button("🎙️ Sugerir 3 Podcasts", use_container_width=True):
         with st.spinner("Buscando recomendações..."):
-            prompt = f"Atue como curador. Sugira 3 episódios ou podcasts focados em '{tema_podcast}' para ouvir treinando. Dê o nome, um resumo e por que é bom."
+            # O Prompt em linha única para evitar erro de indentação
+            prompt = f"Atue como curador de conteúdo. Sugira 3 episódios ou podcasts focados em '{tema_podcast}' para ouvir treinando. Para cada um, forneça: 1. Nome do Podcast e Título do Episódio. 2. Um resumo curto. 3. Por que é bom para treinar. 4. OBRIGATÓRIO: Um link de busca do YouTube para o usuário achar o vídeo. Formate o link exatamente assim (trocando os espaços por +): [🎬 Buscar no YouTube](https://www.youtube.com/results?search_query=Nome+do+Podcast+Titulo+do+Episodio)"
+            
             st.markdown(f'<div class="samurai-card" style="border-left-color: #9C27B0;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
 
     st.divider()
@@ -69,11 +71,9 @@ with st.expander("🎧 Podcasts para o Treino (Recomendação IA + Download)", e
                         }
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             info = ydl.extract_info(link_podcast, download=True)
-                            # Após a conversão, o arquivo estará em mp3
                             mp3_filename = ydl.prepare_filename(info).rsplit('.', 1)[0] + '.mp3'
                             mp3_path = os.path.join(tmpdir, mp3_filename)
                             
-                            # Lê o arquivo em memória para o botão de download
                             with open(mp3_path, "rb") as f:
                                 audio_bytes = f.read()
                             
@@ -86,7 +86,6 @@ with st.expander("🎧 Podcasts para o Treino (Recomendação IA + Download)", e
                                 use_container_width=True
                             )
                 else:
-                    # Se for um link direto de MP3
                     import requests
                     res = requests.get(link_podcast)
                     if res.status_code == 200:
@@ -273,7 +272,7 @@ def _run(cmd):
 
 def aplicar():
     print("=" * 60)
-    print("⚔️  ADICIONANDO DOWNLOAD DE PODCAST E CORRIGINDO LAYOUT")
+    print("⚔️  ADICIONANDO LINKS DE PODCAST")
     print("=" * 60)
     
     cam = "ui/pages/01_Corpo.py"
@@ -287,7 +286,7 @@ def aplicar():
 
     print("\n☁️  SINCRONIZANDO COM O GITHUB")
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Feat: Download de podcasts via YouTube/MP3"])
+    _run(["git", "commit", "-m", "Feat: Adiciona links de busca do YouTube nas sugestoes de podcast"])
     _run(["git", "push", "origin", "main"])
     print("[OK] Push concluído. O Streamlit vai atualizar em instantes.")
     print("=" * 60)
