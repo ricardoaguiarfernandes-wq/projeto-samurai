@@ -1,10 +1,10 @@
 """
-criar_projeto_samurai.py — V8.2 (Controle de Orçamento e Alertas)
+criar_projeto_samurai.py — V8.3 (Gráfico de Constância Anual e Year in Review)
 
 ENTREGAS:
-1. DB: Cria a tabela 'budgets' para guardar os limites mensais.
-2. UI (15_Financas.py): Adiciona a configuração de teto de gastos e barras de progresso.
-3. API (api_samurai.py): A rota de receber foto no Telegram agora checa o orçamento e avisa se estourou.
+1. UI (00_Home.py): Adiciona o Heatmap (quadradinhos) de constância dos últimos 365 dias.
+2. UI (00_Home.py): Adiciona o "Year in Review" (resumo macro de hábitos, treinos e XP).
+3. LÓGICA: Conta hábitos diários para pintar o gráfico de acordo com a intensidade.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -29,131 +29,114 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-# ============================================================
-# 1. SCHEMA (Tabela de Orçamento)
-# ============================================================
-def fix_schema_budgets() -> None:
-    p = BASE / "core" / "schema.py"
+def fix_home_heatmap() -> None:
+    p = BASE / "ui" / "pages" / "00_Home.py"
     txt = read(p)
-    
-    if "CREATE TABLE IF NOT EXISTS budgets" in txt:
-        print("[SKIP] schema.py — tabela budgets já existe.")
+
+    if "Heatmap de Constância" in txt:
+        print("[SKIP] 00_Home.py — heatmap já implementado.")
         return
+
+    # Marcador onde vamos injetar o Heatmap (depois do card de Gamificação/XP)
+    marker = 'st.caption(f"Hoje é {dia_pt}, {date.today().strftime(\'%d/%m/%Y\')}")'
     
-    marker = '"""CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, expense_date TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, category TEXT, notes TEXT);""",'
-    nova_linha = marker + '\n        """CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL);""",'
-    
+    heatmap_code = r'''st.caption(f"Hoje é {dia_pt}, {date.today().strftime('%d/%m/%Y')}")
+
+# --- HEATMAP DE CONSTÂNCIA (ESTILO GITHUB) ---
+import datetime
+import pandas as pd
+
+st.divider()
+st.subheader("🔥 Heatmap de Constância")
+st.caption("Cada quadrado é um dia. A cor representa quantos hábitos você cumpriu.")
+
+# Pega os hábitos dos últimos 365 dias
+hoje = date.today()
+um_ano_atras = hoje - datetime.timedelta(days=364)
+logs = query_all(
+    "SELECT log_date, COUNT(*) as total FROM habit_logs WHERE done = 1 AND log_date >= ? GROUP BY log_date",
+    (um_ano_atras.isoformat(),)
+)
+dados_habitos = {r["log_date"]: int(r["total"]) for r in logs}
+
+# Gera os dias
+dias = []
+for i in range(365):
+    dia_atual = um_ano_atras + datetime.timedelta(days=i)
+    qtd = dados_habitos.get(dia_atual.isoformat(), 0)
+    dias.append({"data": dia_atual, "count": qtd})
+
+df_heatmap = pd.DataFrame(dias)
+df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week
+df_heatmap["dia_semana"] = df_heatmap["data"].dt.weekday
+df_heatmap["mes"] = df_heatmap["data"].dt.month
+
+def get_color(count):
+    if count == 0: return "#171717" # Vazio
+    if count <= 2: return "#5C0000" # Pouco
+    if count <= 5: return "#8B0000" # Médio
+    if count <= 8: return "#B22222" # Bom
+    return "#FF4444" # Excelente
+
+# Constrói o HTML do Heatmap
+html = '<div style="display: flex; gap: 3px; overflow-x: auto; padding-bottom: 10px;">'
+for week in sorted(df_heatmap["semana"].unique()):
+    html += '<div style="display: flex; flex-direction: column; gap: 3px;">'
+    semana_df = df_heatmap[df_heatmap["semana"] == week]
+    # Preenche dias faltantes no início da semana
+    for i in range(7):
+        dia = semana_df[semana_df["dia_semana"] == i]
+        if not dia.empty:
+            row = dia.iloc[0]
+            cor = get_color(row["count"])
+            data_str = row["data"].strftime("%d/%m/%Y")
+            html += f'<div title="{data_str}: {row["count"]} hábitos" style="width: 12px; height: 12px; background-color: {cor}; border-radius: 2px;"></div>'
+        else:
+            html += '<div style="width: 12px; height: 12px;"></div>'
+    html += '</div>'
+html += '</div>'
+
+st.markdown(html, unsafe_allow_html=True)
+
+# Legenda
+st.markdown("""
+<div style="display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #CCC; margin-top: -10px;">
+    <span>Menos</span>
+    <div style="width: 10px; height: 10px; background-color: #171717; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #5C0000; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #8B0000; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #B22222; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #FF4444; border-radius: 2px;"></div>
+    <span>Mais</span>
+</div>
+""", unsafe_allow_html=True)
+
+# --- YEAR IN REVIEW ---
+st.divider()
+st.subheader("📊 Resumo do Ano")
+
+col_a, col_b, col_c = st.columns(3)
+
+# Totais
+total_habitos = sum(dados_habitos.values())
+total_treinos = query_one("SELECT COUNT(DISTINCT log_date) AS c FROM exercise_logs WHERE log_date >= ?", (um_ano_atras.isoformat(),))
+total_treinos = total_treinos["c"] if total_treinos else 0
+total_flashcards = query_one("SELECT COUNT(*) AS c FROM flashcards")
+total_flashcards = total_flashcards["c"] if total_flashcards else 0
+
+with col_a:
+    st.metric("Hábitos Cumpridos", total_habitos)
+with col_b:
+    st.metric("Dias de Treino", total_treinos)
+with col_c:
+    st.metric("Flashcards Criados", total_flashcards)
+'''
+
     if marker in txt:
-        txt = txt.replace(marker, nova_linha, 1)
+        txt = txt.replace(marker, heatmap_code, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] schema.py — marcador de expenses não encontrado.")
-
-# ============================================================
-# 2. UI FINANÇAS (Configuração de Orçamento e Progresso)
-# ============================================================
-def fix_financas_budget_ui() -> None:
-    p = BASE / "ui" / "pages" / "15_Financas.py"
-    txt = read(p)
-
-    if "Configurar Orçamento" in txt:
-        print("[SKIP] 15_Financas.py — orçamento já implementado.")
-        return
-
-    old_chart = '''# --- GRÁFICO DE GASTOS ---
-st.subheader("🍕 Para onde o dinheiro está indo?")'''
-
-    new_ui = '''# --- CONFIGURAÇÃO DE ORÇAMENTO ---
-with st.expander("⚙️ Configurar Orçamento Mensal (Teto de Gastos)"):
-    st.write("Defina o limite para cada categoria. O Mentor vai te avisar se você estourar.")
-    with st.form("form_budget"):
-        c1, c2 = st.columns(2)
-        cat = c1.selectbox("Categoria", ["Alimentação", "Transporte", "Lazer", "Saúde", "Outros"])
-        val = c2.number_input("Limite Mensal (R$)", min_value=0.0, step=100.0)
-        if st.form_submit_button("Salvar Limite"):
-            execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET limit_amount=excluded.limit_amount", (cat, val))
-            st.success(f"Limite de R$ {val:.2f} salvo para {cat}.")
-            st.rerun()
-
-st.divider()
-
-# --- BARRAS DE PROGRESSO DO ORÇAMENTO ---
-st.subheader("📊 Orçamento em Tempo Real")
-budgets = query_all("SELECT * FROM budgets")
-if budgets:
-    for b in budgets:
-        # Pega o total gasto nesta categoria no mês atual
-        gasto_cat = sum([g['amount'] for g in gastos_mes if g['category'] == b['category']])
-        perc = (gasto_cat / b['limit_amount']) * 100 if b['limit_amount'] > 0 else 0
-        
-        cor = "#4CAF50" if perc < 70 else ("#F9A825" if perc < 90 else "#F44336")
-        
-        st.markdown(f"""
-        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
-            <span><b>{b['category']}</b></span>
-            <span>R$ {gasto_cat:.2f} / R$ {b['limit_amount']:.2f} ({perc:.0f}%)</span>
-        </div>
-        """, unsafe_allow_html=True)
-        st.progress(min(perc / 100, 1.0))
-        if perc >= 90:
-            st.caption(f"⚠️ Cuidado! Você já usou {perc:.0f}% do seu limite em {b['category']}.")
-
-st.divider()
-
-# --- GRÁFICO DE GASTOS ---
-st.subheader("🍕 Para onde o dinheiro está indo?")'''
-
-    if old_chart in txt:
-        txt = txt.replace(old_chart, new_ui, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] 15_Financas.py — bloco de gráfico não encontrado.")
-
-# ============================================================
-# 3. API (Alerta de Orçamento no Telegram)
-# ============================================================
-def fix_api_budget_alert() -> None:
-    p = BASE / "api_samurai.py"
-    txt = read(p)
-
-    if "Orçamento estourado" in txt:
-        print("[SKIP] api_samurai.py — alerta de orçamento já existe.")
-        return
-
-    old_telegram_photo = '''                        msg = f"✅ Gasto registrado: *{data.get('description')}*\\n"
-                        msg += f"Valor: R$ {data.get('amount'):.2f}\\n"
-                        msg += f"Categoria: {data.get('category')}"
-                        reply(msg)'''
-
-    new_telegram_photo = '''                        msg = f"✅ Gasto registrado: *{data.get('description')}*\\n"
-                        msg += f"Valor: R$ {data.get('amount'):.2f}\\n"
-                        msg += f"Categoria: {data.get('category')}\\n"
-                        
-                        # Checagem de Orçamento
-                        try:
-                            cat = data.get('category', 'Outros')
-                            budget = query_one("SELECT limit_amount FROM budgets WHERE category = ?", (cat,))
-                            if budget:
-                                # Soma os gastos do mês atual nesta categoria
-                                mes_atual = date.today().strftime("%Y-%m")
-                                gastos_cat = query_all("SELECT amount FROM expenses WHERE category = ? AND expense_date LIKE ?", (cat, f"{mes_atual}%"))
-                                total_gasto = sum(float(g['amount']) for g in gastos_cat) if gastos_cat else 0.0
-                                
-                                perc = (total_gasto / float(budget['limit_amount'])) * 100
-                                if perc >= 100:
-                                    msg += f"\\n🚨 **ORÇAMENTO ESTOURADO!** Você já gastou {perc:.0f}% do teto de {cat}."
-                                elif perc >= 80:
-                                    msg += f"\\n⚠️ **Atenção:** Você já usou {perc:.0f}% do seu orçamento de {cat}."
-                        except Exception as e:
-                            print(f"Erro ao checar orçamento: {e}")
-                            
-                        reply(msg)'''
-
-    if old_telegram_photo in txt:
-        txt = txt.replace(old_telegram_photo, new_telegram_photo, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] api_samurai.py — bloco de resposta de foto não encontrado.")
+        print("[AVISO] 00_Home.py — marcador de data não encontrado.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -161,48 +144,30 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: controle de orcamento mensal e alertas proativos no telegram"])
+    _git_run_safe(["commit", "-m", "feat: adiciona heatmap anual de constancia e year in review"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
         print("[OK] Push concluído com sucesso!")
-        
-        try:
-            hook_url = ""
-            env_file = BASE / ".env.render"
-            if env_file.exists():
-                for line in read(env_file).splitlines():
-                    if line.startswith("RENDER_DEPLOY_HOOK_URL="):
-                        hook_url = line.split("=", 1)[1].strip()
-                        break
-            if hook_url:
-                import requests
-                requests.get(hook_url, timeout=10)
-                print("[OK] Deploy no Render disparado!")
-        except Exception:
-            pass
     else:
         print(f"[ERRO] Push falhou:\n{r.stderr}")
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V8.2 — CONTROLE DE ORÇAMENTO E ALERTAS")
+    print("V8.3 — HEATMAP ANUAL E YEAR IN REVIEW")
     print("=" * 60)
 
-    fix_schema_budgets()
-    fix_financas_budget_ui()
-    fix_api_budget_alert()
+    fix_home_heatmap()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
     print("\nO que testar agora:")
-    print("1. Espere o Render e o Streamlit atualizarem (1-2 min).")
-    print("2. Vá na aba '💸 Finanças' e clique em '⚙️ Configurar Orçamento Mensal'.")
-    print("3. Defina um teto baixo para 'Lazer' (ex: R$ 50) só para testar.")
-    print("4. Vá no Telegram e envie uma foto de comprovante com categoria 'Lazer' e valor '60'.")
-    print("5. Veja a mágica acontecer: o bot vai te avisar na hora que você estourou o orçamento!")
+    print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
+    print("2. Vá para a aba '🏯 Dojo' (Home).")
+    print("3. Role a tela para baixo e veja o seu Heatmap de Constância. Ele vai estar meio vazio agora, mas vai começar a ficar vermelho conforme você usa o sistema.")
+    print("4. Confira também o Resumo do Ano com os seus totais.")
 
 if __name__ == "__main__":
     aplicar()

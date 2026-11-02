@@ -50,6 +50,96 @@ dia_ingles = date.today().strftime('%A')
 dia_pt = DIAS_SEMANA.get(dia_ingles, dia_ingles)
 st.caption(f"Hoje é {dia_pt}, {date.today().strftime('%d/%m/%Y')}")
 
+# --- HEATMAP DE CONSTÂNCIA (ESTILO GITHUB) ---
+import datetime
+import pandas as pd
+
+st.divider()
+st.subheader("🔥 Heatmap de Constância")
+st.caption("Cada quadrado é um dia. A cor representa quantos hábitos você cumpriu.")
+
+# Pega os hábitos dos últimos 365 dias
+hoje = date.today()
+um_ano_atras = hoje - datetime.timedelta(days=364)
+logs = query_all(
+    "SELECT log_date, COUNT(*) as total FROM habit_logs WHERE done = 1 AND log_date >= ? GROUP BY log_date",
+    (um_ano_atras.isoformat(),)
+)
+dados_habitos = {r["log_date"]: int(r["total"]) for r in logs}
+
+# Gera os dias
+dias = []
+for i in range(365):
+    dia_atual = um_ano_atras + datetime.timedelta(days=i)
+    qtd = dados_habitos.get(dia_atual.isoformat(), 0)
+    dias.append({"data": dia_atual, "count": qtd})
+
+df_heatmap = pd.DataFrame(dias)
+df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week
+df_heatmap["dia_semana"] = df_heatmap["data"].dt.weekday
+df_heatmap["mes"] = df_heatmap["data"].dt.month
+
+def get_color(count):
+    if count == 0: return "#171717" # Vazio
+    if count <= 2: return "#5C0000" # Pouco
+    if count <= 5: return "#8B0000" # Médio
+    if count <= 8: return "#B22222" # Bom
+    return "#FF4444" # Excelente
+
+# Constrói o HTML do Heatmap
+html = '<div style="display: flex; gap: 3px; overflow-x: auto; padding-bottom: 10px;">'
+for week in sorted(df_heatmap["semana"].unique()):
+    html += '<div style="display: flex; flex-direction: column; gap: 3px;">'
+    semana_df = df_heatmap[df_heatmap["semana"] == week]
+    # Preenche dias faltantes no início da semana
+    for i in range(7):
+        dia = semana_df[semana_df["dia_semana"] == i]
+        if not dia.empty:
+            row = dia.iloc[0]
+            cor = get_color(row["count"])
+            data_str = row["data"].strftime("%d/%m/%Y")
+            html += f'<div title="{data_str}: {row["count"]} hábitos" style="width: 12px; height: 12px; background-color: {cor}; border-radius: 2px;"></div>'
+        else:
+            html += '<div style="width: 12px; height: 12px;"></div>'
+    html += '</div>'
+html += '</div>'
+
+st.markdown(html, unsafe_allow_html=True)
+
+# Legenda
+st.markdown("""
+<div style="display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #CCC; margin-top: -10px;">
+    <span>Menos</span>
+    <div style="width: 10px; height: 10px; background-color: #171717; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #5C0000; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #8B0000; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #B22222; border-radius: 2px;"></div>
+    <div style="width: 10px; height: 10px; background-color: #FF4444; border-radius: 2px;"></div>
+    <span>Mais</span>
+</div>
+""", unsafe_allow_html=True)
+
+# --- YEAR IN REVIEW ---
+st.divider()
+st.subheader("📊 Resumo do Ano")
+
+col_a, col_b, col_c = st.columns(3)
+
+# Totais
+total_habitos = sum(dados_habitos.values())
+total_treinos = query_one("SELECT COUNT(DISTINCT log_date) AS c FROM exercise_logs WHERE log_date >= ?", (um_ano_atras.isoformat(),))
+total_treinos = total_treinos["c"] if total_treinos else 0
+total_flashcards = query_one("SELECT COUNT(*) AS c FROM flashcards")
+total_flashcards = total_flashcards["c"] if total_flashcards else 0
+
+with col_a:
+    st.metric("Hábitos Cumpridos", total_habitos)
+with col_b:
+    st.metric("Dias de Treino", total_treinos)
+with col_c:
+    st.metric("Flashcards Criados", total_flashcards)
+
+
 checkin = query_one(
     "SELECT * FROM daily_checkins WHERE checkin_date = ?", (today_iso,)
 )
