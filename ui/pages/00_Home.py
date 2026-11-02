@@ -12,7 +12,7 @@ from datetime import date
 
 import streamlit as st
 
-from core.database import query_all, query_one
+from core.database import query_all, query_one, execute
 
 today_iso = date.today().isoformat()
 

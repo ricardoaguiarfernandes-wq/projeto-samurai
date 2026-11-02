@@ -34,7 +34,13 @@ with st.expander("⚖️ Atualizar Peso e Composição Corporal"):
             st.rerun()
 
 # Busca o peso mais recente para a IA
-_metric = query_one("SELECT weight, body_fat FROM body_metrics ORDER BY log_date DESC LIMIT 1")
+try:
+    _metric = query_one("SELECT weight, body_fat FROM body_metrics ORDER BY log_date DESC LIMIT 1")
+except Exception:
+    # Fallback caso a tabela não exista no SQLite local ainda
+    execute("CREATE TABLE IF NOT EXISTS body_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, log_date TEXT NOT NULL UNIQUE, weight REAL NOT NULL, body_fat REAL, notes TEXT)")
+    _metric = None
+
 peso_atual = _metric["weight"] if _metric else 70.0
 bf_atual = _metric["body_fat"] if _metric else "N/A"
 hoje = date.today().isoformat()
