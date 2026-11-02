@@ -49,6 +49,41 @@ with tab_financas:
                 st.markdown(f"<div style='max-height: 300px; overflow-y: auto;'>{e['content'][:1500]}...</div>", unsafe_allow_html=True)
 
 with tab_newsletter:
+    st.subheader("⚡ Consolidador de Notícias do Dia")
+    st.write("A IA vai ler todas as newsletters que chegaram hoje, remover notícias repetidas e unificar as informações em um único resumo.")
+    
+    if st.button("🧠 Consolidar Notícias de Hoje", use_container_width=True):
+        from datetime import date
+        hoje = date.today().isoformat()
+        
+        # Busca todos os e-mails recebidos hoje
+        emails_hoje = query_all("SELECT subject, content FROM newsletters_inbox WHERE received_at LIKE ?", (f"{hoje}%",))
+        
+        if not emails_hoje:
+            st.warning("Nenhuma newsletter recebida hoje. O Pipedream precisa capturar algum e-mail primeiro.")
+        else:
+            with st.spinner(f"Lendo {len(emails_hoje)} newsletter(s) e consolidando com a IA..."):
+                # Junta todos os textos
+                texto_total = "\n\n".join([f"--- NEWSLETTER: {e['subject']} ---\n{e['content']}" for e in emails_hoje])
+                
+                prompt = f"""Atue como o Editor-Chefe do 'Samurai Brief', um boletim diário focado em alta performance, negócios, tecnologia e geopolítica.
+
+Abaixo está a matéria-prima bruta de várias newsletters que chegaram hoje.
+Sua missão OBRIGATÓRIA:
+1. **Desduplicação:** Se duas ou mais newsletters trazem a mesma notícia, REMOVA as repetições.
+2. **Enriquecimento:** Se houver informações complementares sobre o mesmo fato, mescle-as em um único parágrafo robusto.
+3. **Curadoria:** Descarte fofocas irrelevantes ou notícias que não agregam valor estratégico (ex: celebridades, esportes, entretenimento raso).
+4. **Estrutura:** Organize o texto final em tópicos com títulos atraentes (Ex: 🚀 Tech & Inovação, 💼 Negócios, 🌍 Geopolítica, 💡 Curiosidades).
+5. **Tom:** Seja direto, ágil, provocativo e informativo (estilo The Hustle).
+6. **Formatação:** Use Markdown (negrito, itálico, listas).
+
+Aqui está o conteúdo de hoje:
+{texto_total[:30000]}
+"""
+                resumo_unificado = ask_gemini(prompt)
+                st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Samurai Brief Consolidado</div><div style="white-space: pre-wrap;">{resumo_unificado}</div></div>', unsafe_allow_html=True)
+    
+    st.divider()
     st.subheader("📜 Histórico do Samurai Brief")
     try:
         briefs = query_all("SELECT * FROM daily_briefs ORDER BY brief_date DESC LIMIT 7")
