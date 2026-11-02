@@ -1,5 +1,5 @@
 """
-aplicar_academia.py — Adiciona opções de Musculação (Academia) ao Corpo.
+aplicar_academia.py — Adiciona Musculação e melhora o registro de séries com cronômetro.
 """
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from pathlib import Path
 from datetime import date
 import json
 import re
+import time
+import streamlit.components.v1 as components
 
 _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
@@ -29,10 +31,9 @@ from services.ai import ask_gemini
 
 init_db()
 st.title("💪 Corpo")
-st.caption("Treino progressivo com carga e histórico. (Calistenia e Musculação)")
+st.caption("Treino progressivo com carga, histórico e cronômetro interativo.")
 hoje = date.today().isoformat()
 
-# NOVAS OPÇÕES DE DIVISÃO (CALISTENIA E MUSCULAÇÃO)
 divisao = st.selectbox("Divisão de Treino:", [
     "Calistenia - Full Body",
     "Calistenia - PPL (Push/Pull/Legs)",
@@ -70,66 +71,118 @@ if st.button("🤖 Gerar Ficha de Treino com IA para Hoje", use_container_width=
     with st.spinner("O Treinador está analisando e preparando a ficha..."):
         hist = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER BY log_date DESC LIMIT 15")
         ctx = "".join([f"- {h['log_date']}: {h['exercise_name']} - {h['reps']} reps\\n" for h in hist])
-
         prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Divisão: {divisao}. Histórico:\\n{ctx}\\n\\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\\nExemplo:\\n```json\\n{{\\"exercicios\\": [\\"Supino Reto\\", \\"Agachamento Livre\\", \\"Puxada Frontal\\", \\"Rosca Direta\\"]}}\\n```\\nNão escreva nada após o bloco JSON."
-
         resposta_ia = ask_gemini(prompt)
-
         try:
             match = re.search(r'```json\\s*(.*?)\\s*```', resposta_ia, re.DOTALL)
-            if not match:
-                match = re.search(r'\\{.*\\}', resposta_ia, re.DOTALL)
-
+            if not match: match = re.search(r'\\{.*\\}', resposta_ia, re.DOTALL)
             if match:
                 json_str = match.group(1) if '```' in match.group(0) else match.group(0)
                 data = json.loads(json_str)
                 if "exercicios" in data and len(data["exercicios"]) > 0:
                     st.session_state["exercicios_ia"] = data["exercicios"]
-                    texto_limpo = resposta_ia.replace(match.group(0), "").strip()
-                    st.session_state["texto_ia"] = texto_limpo
-                    st.success("Ficha gerada! Os exercícios foram atualizados no formulário abaixo.")
-            else:
-                st.session_state["texto_ia"] = resposta_ia
-        except Exception as e:
+                    st.session_state["texto_ia"] = resposta_ia.replace(match.group(0), "").strip()
+                    st.success("Ficha gerada! Os exercícios foram atualizados abaixo.")
+            else: st.session_state["texto_ia"] = resposta_ia
+        except Exception:
             st.session_state["texto_ia"] = resposta_ia
             st.warning("A IA gerou a ficha, mas não foi possível atualizar o formulário automaticamente.")
 
 if st.session_state.get("texto_ia"):
     st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div style="white-space: pre-wrap;">{st.session_state["texto_ia"]}</div></div>', unsafe_allow_html=True)
-
     if st.button("🔄 Limpar Ficha da IA e voltar ao padrão"):
         if "exercicios_ia" in st.session_state: del st.session_state["exercicios_ia"]
         if "texto_ia" in st.session_state: del st.session_state["texto_ia"]
         st.rerun()
 
+# --- CRONÔMETRO INTERATIVO ---
+def start_timer():
+    st.session_state["timer_active"] = True
+    st.session_state["timer_start"] = time.time()
+
+if st.session_state.get("timer_active"):
+    elapsed = time.time() - st.session_state.get("timer_start", 0)
+    remain = max(0, 150 - int(elapsed)) # 2:30 = 150 segundos
+    if remain > 0:
+        components.html(f'''
+            <div id="timer" style="font-size: 48px; color: #8B0000; text-align: center; font-family: sans-serif; font-weight: bold; margin-top: 10px;">{remain//60:02d}:{remain%60:02d}</div>
+            <div style="text-align: center; color: #F2F2F2; font-family: sans-serif;">Descanso entre séries...</div>
+            <script>
+                var timeLeft = {remain};
+                var elem = document.getElementById('timer');
+                var timerId = setInterval(function() {{
+                    if (timeLeft <= 0) {{
+                        clearInterval(timerId);
+                        elem.innerHTML = "FIM!";
+                        elem.style.color = "#4CAF50";
+                    }} else {{
+                        var m = Math.floor(timeLeft / 60);
+                        var s = timeLeft % 60;
+                        elem.innerHTML = m + ":" + (s < 10 ? "0" : "") + s;
+                        timeLeft--;
+                    }}
+                }}, 1000);
+            </script>
+        ''', height=90)
+    else:
+        st.success("✅ Descanso finalizado! Próxima série.")
+
 st.markdown("### Registrar Execução")
+
 EXERCICIOS_ATUAIS = st.session_state.get("exercicios_ia", EXERCICIOS_PADRAO)
-rows = query_all("SELECT exercise_name, reps, sets FROM exercise_logs WHERE log_date = ?", (hoje,))
-treinos_hoje = {r["exercise_name"]: {"reps": r["reps"], "sets": r["sets"]} for r in rows}
 
-with st.form("form_treino"):
-    novos = {}
-    for ex in EXERCICIOS_ATUAIS:
-        val = treinos_hoje.get(ex, {"reps": 0, "sets": 0})
+# Carrega dados salvos hoje
+rows = query_all("SELECT exercise_name, notes FROM exercise_logs WHERE log_date = ?", (hoje,))
+treinos_hoje = {}
+for r in rows:
+    try:
+        if r["notes"]: treinos_hoje[r["exercise_name"]] = json.loads(r["notes"])
+    except: pass
 
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1: st.markdown(f"**{ex}**")
+for ex in EXERCICIOS_ATUAIS:
+    st.markdown(f"#### {ex}")
+    sets_data = treinos_hoje.get(ex, [])
+    if not sets_data:
+        sets_data = [{"set": i, "reps": 0, "load": 0, "done": False} for i in range(1, 4)]
+
+    for s in sets_data:
+        set_num = s["set"]
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1:
+            # O on_change dispara o cronômetro na hora que clicar
+            st.checkbox(f"Série {set_num}", value=s["done"], key=f"chk_{ex}_{set_num}", on_change=start_timer)
         with c2:
-            if "Prancha" in ex or "Segundos" in ex or "Isometria" in ex or "Cardio" in ex:
-                reps = st.number_input("Segundos", min_value=0, value=int(val["reps"]), key=f"r_{ex}")
-                sets = 3
-                load = 0
-            else:
-                reps = st.number_input("Reps", min_value=0, value=int(val["reps"]), key=f"r_{ex}")
-                sets = st.number_input("Séries", min_value=0, value=3, key=f"s_{ex}")
-                load = st.number_input("Carga (kg)", min_value=0, value=0, key=f"c_{ex}")
-            novos[ex] = {"reps": reps, "sets": sets, "load": load}
+            st.number_input("Reps", min_value=0, value=int(s["reps"]), key=f"reps_{ex}_{set_num}", label_visibility="collapsed")
+        with c3:
+            st.number_input("Carga (kg)", min_value=0, value=int(s["load"]), key=f"carga_{ex}_{set_num}", label_visibility="collapsed")
+    st.markdown("---")
 
-    if st.form_submit_button("💾 Salvar Treino", use_container_width=True):
-        for ex, v in novos.items():
-            if v["reps"] > 0:
-                execute("INSERT INTO exercise_logs (log_date, exercise_name, reps, sets, notes) VALUES (?, ?, ?, ?, ?) ON CONFLICT(log_date, exercise_name) DO UPDATE SET reps=excluded.reps, sets=excluded.sets, notes=excluded.notes", (hoje, ex, v["reps"], v["sets"], f"Carga: {v['load']}kg"))
-        st.rerun()
+if st.button("💾 Salvar Treino Completo", use_container_width=True):
+    for ex in EXERCICIOS_ATUAIS:
+        sets_data_to_save = []
+        total_reps = 0
+        total_sets = 0
+        for set_num in range(1, 4):
+            is_done = st.session_state.get(f"chk_{ex}_{set_num}", False)
+            reps = st.session_state.get(f"reps_{ex}_{set_num}", 0)
+            load = st.session_state.get(f"carga_{ex}_{set_num}", 0)
+            
+            if is_done or reps > 0:
+                sets_data_to_save.append({"set": set_num, "reps": reps, "load": load, "done": is_done})
+                if is_done:
+                    total_reps += reps
+                    total_sets += 1
+                    
+        if sets_data_to_save:
+            # Salvamos o total de reps e séries nas colunas originais (para o gráfico)
+            # E salvamos o detalhamento em JSON na coluna 'notes'
+            notes_str = json.dumps(sets_data_to_save)
+            execute("INSERT INTO exercise_logs (log_date, exercise_name, reps, sets, notes) VALUES (?, ?, ?, ?, ?) ON CONFLICT(log_date, exercise_name) DO UPDATE SET reps=excluded.reps, sets=excluded.sets, notes=excluded.notes", (hoje, ex, total_reps, total_sets, notes_str))
+            
+    st.success("Treino registrado com sucesso!")
+    st.session_state["timer_active"] = False # Para o timer
+    time.sleep(1)
+    st.rerun()
 
 st.divider()
 st.subheader("📈 Ficha do Aluno (Últimos 14 dias)")
@@ -149,7 +202,7 @@ def _run(cmd):
 
 def aplicar():
     print("=" * 60)
-    print("⚔️  ADICIONANDO MUSCULAÇÃO AO CORPO")
+    print("⚔️  ATUALIZANDO CORPO (Séries Individuais + Timer)")
     print("=" * 60)
     
     cam = "ui/pages/01_Corpo.py"
@@ -163,7 +216,7 @@ def aplicar():
 
     print("\n☁️  SINCRONIZANDO COM O GITHUB")
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Feat: Adiciona divisoes de musculacao (Academia) na pagina Corpo"])
+    _run(["git", "commit", "-m", "Feat: Série individual com cronometro no Corpo"])
     _run(["git", "push", "origin", "main"])
     print("[OK] Push concluído. O Streamlit vai atualizar em instantes.")
     print("=" * 60)
