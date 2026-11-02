@@ -23,6 +23,31 @@ st.title("📰 Informação & Notícias")
 tab_financas, tab_newsletter = st.tabs(["📈 Finanças & Notícias Diárias", "⚡ The Samurai Brief"])
 
 with tab_financas:
+    st.subheader("🏛️ Notícias Legislativas de Hoje")
+    if st.button("🧠 Gerar Resumo de Notícias", use_container_width=True):
+        with st.spinner("Lendo Câmara, Senado, ALERJ e Macaé..."):
+            # Simulando a chamada da API local (no Render) - vamos chamar direto a função
+            try:
+                # No app local não tem como chamar a API protegida, então vamos ler direto
+                import feedparser
+                from bs4 import BeautifulSoup
+                noticias = []
+                
+                f1 = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
+                for e in f1.entries[:2]: noticias.append(f"[Câmara] {e.title}")
+                f2 = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
+                for e in f2.entries[:2]: noticias.append(f"[Senado] {e.title}")
+                f3 = feedparser.parse("https://news.google.com/rss/search?q=alerj+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
+                for e in f3.entries[:2]: noticias.append(f"[ALERJ] {e.title}")
+                f4 = feedparser.parse("https://news.google.com/rss/search?q=camara+macae+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
+                for e in f4.entries[:2]: noticias.append(f"[Macaé] {e.title}")
+                
+                prompt = f"Resuma as notícias a seguir em tópicos e explique o impacto prático:\n" + "\n".join(noticias)
+                resumo = ask_gemini(prompt)
+                st.markdown(f'<div class="samurai-card" style="border-left-color: #8B0000;"><div style="white-space: pre-wrap;">{resumo}</div></div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Erro ao carregar notícias: {e}")
+    st.divider()
     st.subheader("Cotações (Tempo Real)")
     col1, col2, col3 = st.columns(3)
     tickers = {"Dólar": "BRL=X", "IBOVESPA": "^BVSP", "Bitcoin": "BTC-USD"}

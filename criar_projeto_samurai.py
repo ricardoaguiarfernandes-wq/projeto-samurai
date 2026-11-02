@@ -1,11 +1,11 @@
 """
-criar_projeto_samurai.py — V7.3 (Google News, Formatação Telegram e Status Alerts)
+criar_projeto_samurai.py — V8.0 (Flashcards Inteligentes e Revisão Espaçada)
 
 ENTREGAS:
-1. FIX (api_samurai.py): Usa Google News RSS para Macaé e ALERJ (evita bloqueio).
-2. FIX (api_samurai.py): Prompt de notícias formatado com tags HTML do Telegram.
-3. FIX (stock_alerts_telegram.py): Manda mensagem mesmo se as ações não caírem.
-4. FIX (scripts telegram): Adiciona 'disable_web_page_preview' para não gerar aquele link gigante do Google Calendar.
+1. DB: Atualiza a tabela flashcards com as colunas do algoritmo SM-2 (intervalo, fator de facilidade, proxima revisao).
+2. UI (14_Carreira.py): Adiciona o gerador automático de flashcards a partir dos manuais.
+3. API (Telegram): Implementa o algoritmo SM-2 no comando /flashcard. A IA avalia a resposta do usuário e calcula a próxima data de revisão.
+4. UI (03_Informacao.py): Adiciona o botão para ler as notícias resumidas no Streamlit.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -31,160 +31,224 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. API (NOTÍCIAS VIA GOOGLE NEWS E HTML)
+# 1. DB SCHEMA (SM-2)
 # ============================================================
-def fix_api_news_google() -> None:
+def fix_schema_flashcards() -> None:
+    p = BASE / "core" / "schema.py"
+    txt = read(p)
+    
+    old_table = '"""CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL);""",'
+    new_table = '"""CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL, interval_days INTEGER DEFAULT 1, ease_factor REAL DEFAULT 2.5, last_asked INTEGER DEFAULT 0);""",'
+    
+    if old_table in txt:
+        txt = txt.replace(old_table, new_table, 1)
+        write_validated(p, txt)
+    else:
+        print("[SKIP] schema.py — tabela flashcards já atualizada ou não encontrada.")
+
+# ============================================================
+# 2. UI CARREIRA (Gerador de Flashcards)
+# ============================================================
+def fix_career_flashcards_ui() -> None:
+    p = BASE / "ui" / "pages" / "14_Carreira.py"
+    txt = read(p)
+
+    if "Gerador de Flashcards" in txt:
+        print("[SKIP] 14_Carreira.py — gerador já existe.")
+        return
+
+    # Adiciona a aba no topo
+    old_tabs = 'tab_missoes, tab_manuais = st.tabs(["🎯 Missões Diárias", "📚 Base de Conhecimento (Manuais)"])'
+    new_tabs = 'tab_missoes, tab_manuais, tab_flashcards = st.tabs(["🎯 Missões Diárias", "📚 Base de Conhecimento (Manuais)", "🧠 Flashcards (Revisão)"])'
+    if old_tabs in txt:
+        txt = txt.replace(old_tabs, new_tabs, 1)
+
+    # Adiciona o bloco da aba flashcards no final
+    flashcards_block = '''
+with tab_flashcards:
+    st.header("Gerador de Flashcards")
+    st.write("A IA vai ler os seus manuais e criar perguntas e respostas para você memorizar.")
+    
+    manuais_lista = query_all("SELECT title FROM manuals")
+    if not manuais_lista:
+        st.warning("Envie um manual na aba ao lado primeiro.")
+    else:
+        manual_escolhido = st.selectbox("Selecione o manual:", [m['title'] for m in manuais_lista])
+        
+        if st.button("🪄 Gerar Flashcards com IA", use_container_width=True):
+            with st.spinner("Lendo o manual e gerando cartões..."):
+                import random
+                manual_data = query_one("SELECT content FROM manuals WHERE title = ?", (manual_escolhido,))
+                texto_manual = manual_data['content']
+                
+                # Pega um chunk de 8000 caracteres para não estourar o limite
+                if len(texto_manual) > 8000:
+                    start_idx = random.randint(0, len(texto_manual) - 8000)
+                    chunk = texto_manual[start_idx:start_idx+8000]
+                else:
+                    chunk = texto_manual
+                    
+                prompt = f"""Leia o trecho do manual técnico abaixo e crie EXATAMENTE 3 flashcards no formato JSON.
+Cada flashcard deve ter uma pergunta desafiadora e uma resposta direta.
+
+Retorne APENAS o JSON válido, sem markdown:
+{{
+  "flashcards": [
+    {{"question": "Pergunta 1...", "answer": "Resposta 1..."}},
+    {{"question": "Pergunta 2...", "answer": "Resposta 2..."}},
+    {{"question": "Pergunta 3...", "answer": "Resposta 3..."}}
+  ]
+}}
+
+TEXTO DO MANUAL:
+{chunk}
+"""
+                res = ask_gemini(prompt)
+                import re, json
+                from datetime import date
+                m = re.search(r'\\{.*\\}', res, re.DOTALL)
+                if m:
+                    try:
+                        data = json.loads(m.group(0))
+                        for card in data.get("flashcards", []):
+                            execute(
+                                "INSERT INTO flashcards (question, answer, next_review) VALUES (?, ?, ?)",
+                                (card["question"], card["answer"], date.today().isoformat())
+                            )
+                        st.success("Flashcards gerados com sucesso! Vá no Telegram e digite /flashcard.")
+                    except Exception as e:
+                        st.error(f"Erro ao processar JSON: {e}")
+                else:
+                    st.error("A IA não retornou o formato esperado.")
+
+    st.divider()
+    st.subheader("📅 Cartões Pendentes Hoje")
+    from datetime import date
+    pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))
+    if not pendentes:
+        st.info("Nenhum cartão pendente para hoje. Ótimo trabalho!")
+    else:
+        for p_card in pendentes:
+            st.markdown(f"- {p_card['question']}")
+'''
+
+    txt += flashcards_block
+    write_validated(p, txt)
+
+# ============================================================
+# 3. API (Algoritmo SM-2 no Telegram)
+# ============================================================
+def fix_api_telegram_sm2() -> None:
     p = BASE / "api_samurai.py"
     txt = read(p)
 
-    new_endpoint = r'''
-# ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Com Resumo IA)
-# ============================================================
-@app.get("/api/daily-news", dependencies=[Depends(require_token)])
-def daily_news():
-    import feedparser
-    from bs4 import BeautifulSoup
-    from services.ai import ask_gemini
-
-    noticias_brutas = []
-    links_vistos = set()
-
-    # 1. Câmara dos Deputados (RSS Oficial)
-    try:
-        feed = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
-        for entry in feed.entries[:3]:
-            resumo = getattr(entry, 'summary', '')
-            clean_resumo = BeautifulSoup(resumo, "html.parser").get_text(strip=True)
-            noticias_brutas.append(f"FONTE: Câmara\nTÍTULO: {entry.title}\nRESUMO: {clean_resumo}")
-    except Exception as e:
-        print(f"Erro Câmara RSS: {e}")
-
-    # 2. Senado Federal (RSS Oficial)
-    try:
-        feed = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
-        for entry in feed.entries[:3]:
-            resumo = getattr(entry, 'summary', '')
-            clean_resumo = BeautifulSoup(resumo, "html.parser").get_text(strip=True)
-            noticias_brutas.append(f"FONTE: Senado\nTÍTULO: {entry.title}\nRESUMO: {clean_resumo}")
-    except Exception as e:
-        print(f"Erro Senado RSS: {e}")
-
-    # 3. ALERJ (Via Google News para burlar bloqueio)
-    try:
-        feed = feedparser.parse("https://news.google.com/rss/search?q=alerj+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
-        for entry in feed.entries[:2]:
-            if entry.title not in links_vistos:
-                links_vistos.add(entry.title)
-                noticias_brutas.append(f"FONTE: ALERJ\nTÍTULO: {entry.title}\nRESUMO: Notícia recente da ALERJ.")
-    except Exception as e:
-        print(f"Erro ALERJ Google News: {e}")
-
-    # 4. Câmara de Macaé (Via Google News para burlar bloqueio)
-    try:
-        feed = feedparser.parse("https://news.google.com/rss/search?q=camara+macae+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
-        for entry in feed.entries[:2]:
-            if entry.title not in links_vistos:
-                links_vistos.add(entry.title)
-                noticias_brutas.append(f"FONTE: Macaé\nTÍTULO: {entry.title}\nRESUMO: Notícia recente da Câmara de Macaé.")
-    except Exception as e:
-        print(f"Erro Macaé Google News: {e}")
-
-    if not noticias_brutas:
-        return {"text": "📰 Nenhuma notícia encontrada no momento."}
-
-    texto_bruto_concatenado = "\n\n---\n\n".join(noticias_brutas)
-    
-    prompt = f"""Atue como o Analista Político do Projeto Samurai.
-Abaixo estão as notícias brutas coletadas hoje.
-
-Sua missão:
-1. Para CADA notícia, crie um resumo explicativo curto (2 a 3 linhas).
-2. Formate a saída usando HTML para o Telegram: Use <b>Título</b> e <i>Resumo</i>. NÃO use # ou **.
-3. Organize por fonte (Câmara, Senado, Macaé, ALERJ).
-4. Seja direto e sem introduções.
-
-NOTÍCIAS BRUTAS:
-{texto_bruto_concatenado}
-"""
-
-    try:
-        resumo_final = ask_gemini(prompt)
-        # O Telegram precisa da tag <b> e <i>, que o Gemini já vai gerar.
-        texto_final = "<b>🏛️ Notícias Legislativas Resumidas</b>\n\n" + resumo_final
-    except Exception as e:
-        texto_final = "Erro ao gerar resumo com a IA."
-
-    return {"text": texto_final}
-
-'''
-
-    start_marker = '@app.get("/api/daily-news", dependencies=[Depends(require_token)])'
-    end_marker = 'if __name__ == "__main__":'
-    
-    start_idx = txt.find(start_marker)
-    end_idx = txt.find(end_marker)
-
-    if start_idx != -1 and end_idx != -1:
-        txt = txt[:start_idx] + new_endpoint + "\n" + txt[end_idx:]
-        write_validated(p, txt)
-    else:
-        print("[ERRO] api_samurai.py — marcadores não encontrados.")
-
-# ============================================================
-# 2. STOCK ALERTS (Sempre envia mensagem)
-# ============================================================
-def fix_stock_alerts() -> None:
-    p = BASE / "stock_alerts_telegram.py"
-    if not p.exists(): return
-
-    txt = read(p)
-    if "Nenhuma queda brusca" in txt:
-        print("[SKIP] stock_alerts_telegram.py — já configurado.")
+    if "SM-2" in txt:
+        print("[SKIP] api_samurai.py — SM-2 já implementado.")
         return
 
-    old_cond = '''        if alertas:
-            msg = "🎯 **Caçador de Oportunidades**\\n\\n" + "\\n".join(alertas)
-            requests.post(f"https://api.telegram.org/bot{tg}/sendMessage", json={"chat_id": chat, "text": msg, "parse_mode": "Markdown"})'''
+    # Substitui toda a lógica de texto do telegram para incluir o SM-2 e a resposta
+    old_flashcard = '''        if text.startswith("/flashcard"):
+            card = query_one("SELECT question, answer FROM flashcards ORDER BY RANDOM() LIMIT 1")
+            if not card:
+                reply("📭 Nenhum flashcard cadastrado ainda. Vá na aba Carreira do app.")
+            else:
+                reply(f"🧠 **Flashcard:**\\n\\n{card['question']}\\n\\n_(Digite qualquer coisa para ver a resposta)_\\n**Resp:** {card['answer']}")
+            return'''
 
-    new_cond = '''        if alertas:
-            msg = "🎯 <b>Caçador de Oportunidades</b>\\n\\n" + "\\n".join(alertas)
-        else:
-            msg = "📈 <b>Status do Mercado</b>\\n\\nNenhuma queda brusca (acima de 2%) nas suas ações hoje. O mercado está estável."
+    new_flashcard = '''        # --- LÓGICA DE FLASHCARDS (SM-2) ---
+        from datetime import datetime, timedelta
+        
+        # Se o usuário estiver respondendo a um flashcard pendente
+        card_pendente = query_one("SELECT * FROM flashcards WHERE last_asked = 1 LIMIT 1")
+        if card_pendente and not text.startswith("/"):
+            prompt_aval = f"""Atue como um avaliador técnico.
+Pergunta: "{card_pendente['question']}"
+Resposta Correta: "{card_pendente['answer']}"
+Resposta do Aluno: "{text}"
+
+O aluno acertou? Avalie o sentido, não precisa ser palavra por palavra. 
+Se ele acertou, responda começando com "ACERTOU".
+Se ele errou, responda começando com "ERROU" e explique a resposta correta.
+"""
+            avaliacao = ask_gemini(prompt_aval)
             
-        requests.post(f"https://api.telegram.org/bot{tg}/sendMessage", json={"chat_id": chat, "text": msg, "parse_mode": "HTML"})'''
+            # Algoritmo SM-2 Simplificado
+            ease = card_pendente['ease_factor']
+            interval = card_pendente['interval_days']
+            
+            if "ACERTOU" in avaliacao:
+                interval = int(interval * ease)
+                ease = ease + 0.1
+                reply(f"✅ {avaliacao}\\n\\n_Próxima revisão em {interval} dias._")
+            else:
+                interval = 1 # Volta amanhã
+                ease = max(1.3, ease - 0.2)
+                reply(f"❌ {avaliacao}\\n\\n_Voltará amanhã._")
+                
+            next_review = (date.today() + timedelta(days=interval)).isoformat()
+            execute("UPDATE flashcards SET last_asked = 0, interval_days = ?, ease_factor = ?, next_review = ? WHERE id = ?",
+                    (interval, ease, next_review, card_pendente['id']))
+            return
 
-    if old_cond in txt:
-        txt = txt.replace(old_cond, new_cond, 1)
+        if text.startswith("/flashcard"):
+            card = query_one("SELECT * FROM flashcards WHERE next_review <= ? AND last_asked = 0 ORDER BY next_review ASC LIMIT 1", (date.today().isoformat(),))
+            if not card:
+                reply("📭 Nenhum flashcard pendente para hoje. Vá na aba Carreira do app para gerar novos.")
+            else:
+                execute("UPDATE flashcards SET last_asked = 1 WHERE id = ?", (card['id'],))
+                reply(f"🧠 **Flashcard:**\\n\\n{card['question']}\\n\\n_(Digite a sua resposta)_")
+            return'''
+
+    if old_flashcard in txt:
+        txt = txt.replace(old_flashcard, new_flashcard, 1)
         write_validated(p, txt)
+    else:
+        print("[AVISO] api_samurai.py — bloco do flashcard antigo não encontrado.")
 
 # ============================================================
-# 3. OUTROS SCRIPTS (Desabilitar Preview e HTML)
+# 4. UI INFORMAÇÃO (Notícias no App)
 # ============================================================
-def fix_telegram_scripts() -> None:
-    # Brief
-    p1 = BASE / "daily_brief_telegram.py"
-    if p1.exists():
-        txt = read(p1)
-        if "disable_web_page_preview" not in txt:
-            txt = txt.replace('"parse_mode": "Markdown"', '"parse_mode": "HTML", "disable_web_page_preview": True')
-            write_validated(p1, txt)
+def fix_informacao_news_ui() -> None:
+    p = BASE / "ui" / "pages" / "03_Informacao.py"
+    txt = read(p)
 
-    # News
-    p2 = BASE / "daily_news_telegram.py"
-    if p2.exists():
-        txt = read(p2)
-        if "disable_web_page_preview" not in txt:
-            txt = txt.replace('"parse_mode": "Markdown"', '"parse_mode": "HTML", "disable_web_page_preview": True')
-            write_validated(p2, txt)
+    if "Notícias Legislativas" in txt:
+        print("[SKIP] 03_Informacao.py — notícias já implementadas.")
+        return
 
-    # Weekly Review
-    p3 = BASE / "weekly_review_telegram.py"
-    if p3.exists():
-        txt = read(p3)
-        if "disable_web_page_preview" not in txt:
-            txt = txt.replace('"parse_mode": "Markdown"', '"parse_mode": "HTML", "disable_web_page_preview": True')
-            write_validated(p3, txt)
+    old_block = 'with tab_financas:'
+    new_block = '''with tab_financas:
+    st.subheader("🏛️ Notícias Legislativas de Hoje")
+    if st.button("🧠 Gerar Resumo de Notícias", use_container_width=True):
+        with st.spinner("Lendo Câmara, Senado, ALERJ e Macaé..."):
+            # Simulando a chamada da API local (no Render) - vamos chamar direto a função
+            try:
+                # No app local não tem como chamar a API protegida, então vamos ler direto
+                import feedparser
+                from bs4 import BeautifulSoup
+                noticias = []
+                
+                f1 = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
+                for e in f1.entries[:2]: noticias.append(f"[Câmara] {e.title}")
+                f2 = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
+                for e in f2.entries[:2]: noticias.append(f"[Senado] {e.title}")
+                f3 = feedparser.parse("https://news.google.com/rss/search?q=alerj+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
+                for e in f3.entries[:2]: noticias.append(f"[ALERJ] {e.title}")
+                f4 = feedparser.parse("https://news.google.com/rss/search?q=camara+macae+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
+                for e in f4.entries[:2]: noticias.append(f"[Macaé] {e.title}")
+                
+                prompt = f"Resuma as notícias a seguir em tópicos e explique o impacto prático:\\n" + "\\n".join(noticias)
+                resumo = ask_gemini(prompt)
+                st.markdown(f'<div class="samurai-card" style="border-left-color: #8B0000;"><div style="white-space: pre-wrap;">{resumo}</div></div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Erro ao carregar notícias: {e}")
+    st.divider()'''
+
+    if old_block in txt:
+        txt = txt.replace(old_block, new_block, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] 03_Informacao.py — bloco tab_financas não encontrado.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -192,7 +256,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix: raspagem google news, formato html telegram e alertas diarios"])
+    _git_run_safe(["commit", "-m", "feat: flashcards inteligentes (SM-2), gerador de cartoes e noticias no app"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -218,22 +282,24 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V7.3 — FIX NOTÍCIAS E ALERTAS")
+    print("V8.0 — FLASHCARDS SM-2 E NOTÍCIAS NO APP")
     print("=" * 60)
 
-    fix_api_news_google()
-    fix_stock_alerts()
-    fix_telegram_scripts()
+    fix_schema_flashcards()
+    fix_career_flashcards_ui()
+    fix_api_telegram_sm2()
+    fix_informacao_news_ui()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que testar agora:")
+    print("\nComo testar:")
     print("1. Espere o Render atualizar.")
-    print("2. No Telegram, envie o comando '/news' (ou rode o 'Samurai Daily News' no GitHub).")
-    print("3. Veja se Macaé e ALERJ aparecem (via Google News) e se o texto está formatado corretamente.")
-    print("4. Vá no GitHub Actions > Samurai Stock Alerts > Run workflow. Vai chegar no Telegram mesmo se as ações não caírem.")
+    print("2. Vá na aba 'Carreira' > 'Flashcards' e gere cartões a partir do seu manual.")
+    print("3. No Telegram, envie '/flashcard' para receber a pergunta.")
+    print("4. Digite a sua resposta. A IA vai te avaliar e agendar a próxima revisão (se acertar, demora mais; se errar, volta amanhã).")
+    print("5. Na aba 'Informação', agora tem um botão para gerar o resumo de notícias direto no app.")
 
 if __name__ == "__main__":
     aplicar()

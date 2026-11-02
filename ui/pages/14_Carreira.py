@@ -20,7 +20,7 @@ st.caption("Trilha de evolução: Estagiário de Survey ➔ Surveyor Junior.")
 
 hoje = date.today().isoformat()
 
-tab_missoes, tab_manuais = st.tabs(["🎯 Missões Diárias", "📚 Base de Conhecimento (Manuais)"])
+tab_missoes, tab_manuais, tab_flashcards = st.tabs(["🎯 Missões Diárias", "📚 Base de Conhecimento (Manuais)", "🧠 Flashcards (Revisão)"])
 
 with tab_manuais:
     st.header("Biblioteca Técnica")
@@ -185,3 +185,69 @@ Seja direto e motivador.
                     if st.button("Limpar Desafio"):
                         st.session_state["desafio_manual"] = None
                         st.rerun()
+
+with tab_flashcards:
+    st.header("Gerador de Flashcards")
+    st.write("A IA vai ler os seus manuais e criar perguntas e respostas para você memorizar.")
+    
+    manuais_lista = query_all("SELECT title FROM manuals")
+    if not manuais_lista:
+        st.warning("Envie um manual na aba ao lado primeiro.")
+    else:
+        manual_escolhido = st.selectbox("Selecione o manual:", [m['title'] for m in manuais_lista])
+        
+        if st.button("🪄 Gerar Flashcards com IA", use_container_width=True):
+            with st.spinner("Lendo o manual e gerando cartões..."):
+                import random
+                manual_data = query_one("SELECT content FROM manuals WHERE title = ?", (manual_escolhido,))
+                texto_manual = manual_data['content']
+                
+                # Pega um chunk de 8000 caracteres para não estourar o limite
+                if len(texto_manual) > 8000:
+                    start_idx = random.randint(0, len(texto_manual) - 8000)
+                    chunk = texto_manual[start_idx:start_idx+8000]
+                else:
+                    chunk = texto_manual
+                    
+                prompt = f"""Leia o trecho do manual técnico abaixo e crie EXATAMENTE 3 flashcards no formato JSON.
+Cada flashcard deve ter uma pergunta desafiadora e uma resposta direta.
+
+Retorne APENAS o JSON válido, sem markdown:
+{{
+  "flashcards": [
+    {{"question": "Pergunta 1...", "answer": "Resposta 1..."}},
+    {{"question": "Pergunta 2...", "answer": "Resposta 2..."}},
+    {{"question": "Pergunta 3...", "answer": "Resposta 3..."}}
+  ]
+}}
+
+TEXTO DO MANUAL:
+{chunk}
+"""
+                res = ask_gemini(prompt)
+                import re, json
+                from datetime import date
+                m = re.search(r'\{.*\}', res, re.DOTALL)
+                if m:
+                    try:
+                        data = json.loads(m.group(0))
+                        for card in data.get("flashcards", []):
+                            execute(
+                                "INSERT INTO flashcards (question, answer, next_review) VALUES (?, ?, ?)",
+                                (card["question"], card["answer"], date.today().isoformat())
+                            )
+                        st.success("Flashcards gerados com sucesso! Vá no Telegram e digite /flashcard.")
+                    except Exception as e:
+                        st.error(f"Erro ao processar JSON: {e}")
+                else:
+                    st.error("A IA não retornou o formato esperado.")
+
+    st.divider()
+    st.subheader("📅 Cartões Pendentes Hoje")
+    from datetime import date
+    pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))
+    if not pendentes:
+        st.info("Nenhum cartão pendente para hoje. Ótimo trabalho!")
+    else:
+        for p_card in pendentes:
+            st.markdown(f"- {p_card['question']}")
