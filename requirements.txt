@@ -18,3 +18,6 @@ fpdf2>=2.7.8
 plotly>=5.18.0
 beautifulsoup4>=4.12.0
 youtube-transcript-api>=0.6.2
+
+# Fix para faster-whisper
+av<19
