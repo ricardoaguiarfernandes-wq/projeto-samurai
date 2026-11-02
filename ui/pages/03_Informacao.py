@@ -46,20 +46,25 @@ with tab_financas:
 
 with tab_newsletter:
     emails = query_all("SELECT * FROM newsletters_inbox ORDER BY received_at DESC LIMIT 5")
+    
+    if st.button("📰 Gerar 'The Samurai Brief' do Dia (IA)", use_container_width=True):
+        with st.spinner("Lendo notícias e gerando o Brief..."):
+            from bs4 import BeautifulSoup
+            texto = ""
+            for e in emails[:3]:
+                soup = BeautifulSoup(e['content'], "html.parser")
+                texto += f"--- {e['subject']} ---\n{soup.get_text(strip=True)}\n"
+            
+            if not texto:
+                texto = "Nenhuma newsletter importada. Crie um brief baseado nas principais notícias do dia (finanças, tecnologia, geopolítica)."
+                
+            prompt = f"Atue como editor da newsletter The Hustle. Resuma os pontos principais:\n{texto}"
+            resumo = ask_gemini(prompt)
+            st.markdown(f"""<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Edição de Hoje</div><div style="white-space: pre-wrap;">{resumo}</div></div>""", unsafe_allow_html=True)
+            
     if not emails:
-        st.info("Nenhuma newsletter recebida ainda.")
+        st.info("Nenhuma newsletter recebida ainda. O botão acima gerará um brief com notícias gerais.")
     else:
-        if st.button("📰 Gerar 'The Samurai Brief' do Dia (IA)", use_container_width=True):
-            with st.spinner("Resumindo newsletters..."):
-                from bs4 import BeautifulSoup
-                texto = ""
-                for e in emails[:3]:
-                    soup = BeautifulSoup(e['content'], "html.parser")
-                    texto += f"--- {e['subject']} ---\n{soup.get_text(strip=True)}\n"
-                prompt = f"Atue como editor da newsletter The Hustle. Resuma os pontos principais:\n{texto}"
-                resumo = ask_gemini(prompt)
-                st.markdown(f"""<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Edição de Hoje</div><div style="white-space: pre-wrap;">{resumo}</div></div>""", unsafe_allow_html=True)
-        
         for e in emails:
             with st.expander(f"✉️ {e['subject']}"):
                 st.markdown(f"<div style='max-height: 400px; overflow-y: auto;'>{e['content']}</div>", unsafe_allow_html=True)

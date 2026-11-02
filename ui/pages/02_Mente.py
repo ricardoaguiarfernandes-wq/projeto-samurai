@@ -18,7 +18,29 @@ st.title("🧠 Mente")
 tab_leitura, tab_youtube = st.tabs(["📚 Livros (PDF)", "📺 Resumo de Vídeos (YouTube)"])
 
 with tab_leitura:
-    st.write("Função de PDF mantida.")
+    st.write("Faça o upload de um livro em PDF para extrair o texto e gerar um resumo com a IA.")
+    uploaded_file = st.file_uploader("Envie seu PDF", type=["pdf"])
+    
+    if uploaded_file is not None:
+        if st.button("📚 Extrair Texto e Resumir com IA", use_container_width=True):
+            with st.spinner("Lendo e processando PDF (pode demorar um pouco)..."):
+                try:
+                    import fitz
+                    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+                    text = ""
+                    for page in doc:
+                        text += page.get_text()
+                    
+                    if text.strip():
+                        prompt = f"Atue como um estudioso e mentor. Resuma os principais pontos do seguinte texto extraído de um livro:\n\n{text[:20000]}"
+                        resumo = ask_gemini(prompt)
+                        st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Resumo do Livro</div><div style="white-space: pre-wrap;">{resumo}</div></div>', unsafe_allow_html=True)
+                    else:
+                        st.warning("O PDF não contém texto legível (pode ser apenas imagens escaneadas).")
+                except ImportError:
+                    st.error("A biblioteca 'pymupdf' não está instalada. Rode: pip install pymupdf")
+                except Exception as e:
+                    st.error(f"Erro ao ler o PDF: {e}")
 
 with tab_youtube:
     st.header("Resumo de Vídeos do YouTube")

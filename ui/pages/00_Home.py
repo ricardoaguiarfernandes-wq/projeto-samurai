@@ -19,7 +19,12 @@ today_iso = date.today().isoformat()
 st.title("🏯 Dojo")
 
 # --- GAMIFICAÇÃO ---
-stats = query_one("SELECT xp FROM user_stats WHERE id = 1") or {"xp": 0}
+try:
+    stats = query_one("SELECT xp FROM user_stats WHERE id = 1") or {"xp": 0}
+except Exception:
+    execute("CREATE TABLE IF NOT EXISTS user_stats (id INTEGER PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1)")
+    execute("INSERT INTO user_stats (id, xp, level) VALUES (1, 0, 1)")
+    stats = {"xp": 0}
 xp_total = stats["xp"] if stats else 0
 nivel = (xp_total // 100) + 1
 ranks = {1: "Ronin", 2: "Ashigaru", 3: "Samurai", 4: "Hatamoto", 5: "Daimyo"}
