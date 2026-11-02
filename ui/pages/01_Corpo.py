@@ -17,22 +17,40 @@ from services.ai import ask_gemini
 
 init_db()
 st.title("💪 Corpo")
-st.caption("Treino calistênico progressivo com carga e histórico.")
+st.caption("Treino progressivo com carga e histórico. (Calistenia e Musculação)")
 hoje = date.today().isoformat()
 
-divisao = st.selectbox("Divisão de Treino:", ["Full Body", "PPL (Push/Pull/Legs)", "Upper/Lower"])
+# NOVAS OPÇÕES DE DIVISÃO (CALISTENIA E MUSCULAÇÃO)
+divisao = st.selectbox("Divisão de Treino:", [
+    "Calistenia - Full Body",
+    "Calistenia - PPL (Push/Pull/Legs)",
+    "Calistenia - Upper/Lower",
+    "Musculação - Full Body",
+    "Musculação - ABC (Peito/Costas/Pernas)",
+    "Musculação - Push/Pull/Legs"
+])
 
-if divisao == "Full Body":
+dia = date.today().weekday()
+
+if divisao == "Calistenia - Full Body":
     EXERCICIOS_PADRAO = ["Flexão de Braço", "Agachamento", "Barra Fixa", "Prancha (segundos)"]
-elif divisao == "PPL (Push/Pull/Legs)":
-    dia = date.today().weekday()
+elif divisao == "Calistenia - PPL (Push/Pull/Legs)":
     if dia in [0, 3]: EXERCICIOS_PADRAO = ["Flexão de Braço", "Desenvolvimento", "Tríceps"]
     elif dia in [1, 4]: EXERCICIOS_PADRAO = ["Barra Fixa", "Remada", "Rosca Direta"]
     else: EXERCICIOS_PADRAO = ["Agachamento", "Afundo", "Panturrilha"]
-else:
-    dia = date.today().weekday()
+elif divisao == "Calistenia - Upper/Lower":
     if dia in [0, 3]: EXERCICIOS_PADRAO = ["Barra Fixa", "Flexão de Braço", "Remada"]
     else: EXERCICIOS_PADRAO = ["Agachamento", "Afundo", "Prancha (segundos)"]
+elif divisao == "Musculação - Full Body":
+    EXERCICIOS_PADRAO = ["Supino Reto", "Agachamento Livre", "Puxada Frontal", "Desenvolvimento com Halteres"]
+elif divisao == "Musculação - ABC (Peito/Costas/Pernas)":
+    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Supino Reto", "Supino Inclinado", "Tríceps Testa", "Elevação Lateral"]
+    elif dia in [1, 4]: EXERCICIOS_PADRAO = ["Puxada Frontal", "Remada Curvada", "Rosca Direta", "Rosca Martelo"]
+    else: EXERCICIOS_PADRAO = ["Agachamento Livre", "Leg Press", "Cadeira Extensora", "Mesa Flexora"]
+else: # Musculação - PPL
+    if dia in [0, 3]: EXERCICIOS_PADRAO = ["Supino Reto", "Desenvolvimento Militar", "Tríceps Corda", "Crucifixo"]
+    elif dia in [1, 4]: EXERCICIOS_PADRAO = ["Puxada Frontal", "Remada Baixa", "Rosca Direta", "Rosca Scott"]
+    else: EXERCICIOS_PADRAO = ["Agachamento Livre", "Leg Press", "Cadeira Extensora", "Panturrilha em Pé"]
 
 st.subheader(f"🥋 Treino de Hoje: {divisao}")
 
@@ -41,7 +59,7 @@ if st.button("🤖 Gerar Ficha de Treino com IA para Hoje", use_container_width=
         hist = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER BY log_date DESC LIMIT 15")
         ctx = "".join([f"- {h['log_date']}: {h['exercise_name']} - {h['reps']} reps\n" for h in hist])
 
-        prompt = f"Atue como treinador de calistenia. Aluno ectomorfo. Divisão: {divisao}. Histórico:\n{ctx}\n\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\nExemplo:\n```json\n{{\"exercicios\": [\"Flexão Declinada\", \"Pistol Squat\", \"Barra Pronada\", \"Leg Raises\"]}}\n```\nNão escreva nada após o bloco JSON."
+        prompt = f"Atue como treinador de musculação/calistenia. Aluno ectomorfo. Divisão: {divisao}. Histórico:\n{ctx}\n\nSugira a ficha de hoje focando em progressão. Seja direto e motivador.\nIMPORTANTE: No final da sua resposta, adicione um bloco de código JSON contendo APENAS os nomes dos exercícios sugeridos.\nExemplo:\n```json\n{{\"exercicios\": [\"Supino Reto\", \"Agachamento Livre\", \"Puxada Frontal\", \"Rosca Direta\"]}}\n```\nNão escreva nada após o bloco JSON."
 
         resposta_ia = ask_gemini(prompt)
 
@@ -85,7 +103,7 @@ with st.form("form_treino"):
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1: st.markdown(f"**{ex}**")
         with c2:
-            if "Prancha" in ex or "Segundos" in ex or "Isometria" in ex:
+            if "Prancha" in ex or "Segundos" in ex or "Isometria" in ex or "Cardio" in ex:
                 reps = st.number_input("Segundos", min_value=0, value=int(val["reps"]), key=f"r_{ex}")
                 sets = 3
                 load = 0
@@ -107,7 +125,7 @@ hist = query_all("SELECT log_date, exercise_name, reps FROM exercise_logs ORDER 
 if hist:
     df = pd.DataFrame(hist)
     df_agrupado = df.groupby(['log_date', 'exercise_name'])['reps'].sum().reset_index()
-    fig = px.line(df_agrupado, x='log_date', y='reps', color='exercise_name', markers=True, color_discrete_sequence=['#8B0000', '#F9A825', '#4CAF50', '#2196F3'])
+    fig = px.line(df_agrupado, x='log_date', y='reps', color='exercise_name', markers=True, color_discrete_sequence=['#8B0000', '#F9A825', '#4CAF50', '#2196F3', '#9C27B0'])
     fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#F2F2F2'))
     st.plotly_chart(fig, use_container_width=True)
 else:
