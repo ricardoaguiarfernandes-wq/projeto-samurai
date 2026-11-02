@@ -22,6 +22,19 @@ st.title("💪 Corpo")
 st.caption("Treino progressivo com carga, histórico e cronômetro interativo.")
 hoje = date.today().isoformat()
 
+# --- RECOMENDADOR DE PODCASTS ---
+with st.expander("🎧 Podcasts para o Treino (Recomendação IA)", expanded=False):
+    st.write("Escolha um tema e o Mentor sugere 3 opções de podcasts para ouvir durante o treino.")
+    tema_podcast = st.selectbox("Tema do Podcast:", ["Motivação e Disciplina", "Filosofia e Reflexão", "Finanças e Negócios", "História e Geopolítica", "Foco e Alta Performance", "Música Clássica / Épica"])
+    
+    if st.button("🎙️ Sugerir 3 Podcasts", use_container_width=True):
+        with st.spinner("Buscando recomendações..."):
+            prompt = f"Atue como um curador de conteúdo. Sugira 3 episódios ou podcasts focados em '{tema_podcast}' que sejam ótimos para ouvir durante um treino de musculação. Para cada um, forneça: Nome do Podcast, Título do Episódio (ou assunto), uma breve descrição e o motivo de ser bom para treinar."
+            sugestoes = ask_gemini(prompt)
+            st.markdown(f'<div class="samurai-card" style="border-left-color: #9C27B0;"><div style="white-space: pre-wrap;">{sugestoes}</div></div>', unsafe_allow_html=True)
+
+st.divider()
+
 divisao = st.selectbox("Divisão de Treino:", [
     "Calistenia - Full Body",
     "Calistenia - PPL (Push/Pull/Legs)",
@@ -129,6 +142,13 @@ for r in rows:
 
 for ex in EXERCICIOS_ATUAIS:
     st.markdown(f"#### {ex}")
+    
+    # CABEÇALHO EXPLICATIVO
+    h1, h2, h3 = st.columns([1, 1, 1])
+    h1.caption("✅ Feito")
+    h2.caption("🔄 Reps")
+    h3.caption("🏋️ Carga (kg)")
+    
     sets_data = treinos_hoje.get(ex, [])
     if not sets_data:
         sets_data = [{"set": i, "reps": 0, "load": 0, "done": False} for i in range(1, 4)]
@@ -142,7 +162,7 @@ for ex in EXERCICIOS_ATUAIS:
         with c2:
             st.number_input("Reps", min_value=0, value=int(s["reps"]), key=f"reps_{ex}_{set_num}", label_visibility="collapsed")
         with c3:
-            st.number_input("Carga (kg)", min_value=0, value=int(s["load"]), key=f"carga_{ex}_{set_num}", label_visibility="collapsed")
+            st.number_input("Carga", min_value=0, value=int(s["load"]), key=f"carga_{ex}_{set_num}", label_visibility="collapsed")
     st.markdown("---")
 
 if st.button("💾 Salvar Treino Completo", use_container_width=True):
@@ -162,8 +182,6 @@ if st.button("💾 Salvar Treino Completo", use_container_width=True):
                     total_sets += 1
                     
         if sets_data_to_save:
-            # Salvamos o total de reps e séries nas colunas originais (para o gráfico)
-            # E salvamos o detalhamento em JSON na coluna 'notes'
             notes_str = json.dumps(sets_data_to_save)
             execute("INSERT INTO exercise_logs (log_date, exercise_name, reps, sets, notes) VALUES (?, ?, ?, ?, ?) ON CONFLICT(log_date, exercise_name) DO UPDATE SET reps=excluded.reps, sets=excluded.sets, notes=excluded.notes", (hoje, ex, total_reps, total_sets, notes_str))
             
