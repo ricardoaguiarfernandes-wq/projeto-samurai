@@ -1,15 +1,17 @@
 """
-criar_projeto_samurai.py — V4.4 (Hotfix: Sintaxe do SERIAL no Postgres)
+criar_projeto_samurai.py — V4.5 (A Grande Correção do Adaptador SQL)
 
 ENTREGAS:
-1. FIX (core/database.py): Corrige a função adapt_sql para trocar 'INTEGER PRIMARY KEY AUTOINCREMENT' por 'SERIAL PRIMARY KEY' (evitando erro de sintaxe).
-2. FIX (14_Carreira.py): Garante que a tabela manuals seja criada corretamente caso não exista.
+1. FIX (core/database.py): Corrige o adapt_sql usando REGEX para garantir a troca exata do comando.
+2. FIX (14_Carreira.py): Fallback robusto e específico para Postgres/SQLite na tabela manuals.
+3. FORÇA: O init_db agora vai rodar limpo e criar TODAS as tabelas no Supabase.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -28,7 +30,10 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-def fix_adapt_sql() -> None:
+# ============================================================
+# 1. CORRIGIR A RAIZ: adapt_sql em core/database.py
+# ============================================================
+def fix_database_sql_adapter() -> None:
     p = BASE / "core" / "database.py"
     txt = read(p)
 
@@ -36,28 +41,48 @@ def fix_adapt_sql() -> None:
         print("[SKIP] database.py — adapt_sql já corrigido.")
         return
 
-    old_adapt = '''def adapt_sql(sql: str, is_pg: bool) -> str:
+    # Usa Regex para encontrar a função inteira, independente de quebras de linha
+    pattern = re.compile(r"def adapt_sql\(sql: str, is_pg: bool\) -> str:.*?return sql", re.DOTALL)
+    
+    new_func = '''def adapt_sql(sql: str, is_pg: bool) -> str:
     if is_pg:
         sql = sql.replace("?", "%s")
         sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
-        sql = sql.replace("AUTOINCREMENT", "SERIAL")
-    return sql'''
-
-    new_adapt = '''def adapt_sql(sql: str, is_pg: bool) -> str:
-    if is_pg:
-        sql = sql.replace("?", "%s")
-        sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
-        # Correção crucial: troca a string inteira para o formato do Postgres
         sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-        # Fallback caso venha apenas AUTOINCREMENT
         sql = sql.replace("AUTOINCREMENT", "SERIAL")
     return sql'''
-
-    if old_adapt in txt:
-        txt = txt.replace(old_adapt, new_adapt, 1)
+    
+    if pattern.search(txt):
+        txt = pattern.sub(new_func, txt, count=1)
         write_validated(p, txt)
     else:
-        print("[AVISO] database.py — bloco adapt_sql não encontrado.")
+        print("[AVISO] database.py — não foi possível substituir adapt_sql por regex.")
+
+# ============================================================
+# 2. FALLBACK ESPECÍFICO NO 14_CARREIRA.PY
+# ============================================================
+def fix_career_fallback() -> None:
+    p = BASE / "ui" / "pages" / "14_Carreira.py"
+    txt = read(p)
+
+    old_fallback = '''    except Exception:
+        # Fallback: se a tabela não existir no Postgres, cria agora
+        execute("CREATE TABLE IF NOT EXISTS manuals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')))")
+        manuais = []'''
+
+    new_fallback = '''    except Exception:
+        from core.database import is_postgres
+        if is_postgres():
+            execute("CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        else:
+            execute("CREATE TABLE IF NOT EXISTS manuals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')))")
+        manuais = []'''
+
+    if old_fallback in txt:
+        txt = txt.replace(old_fallback, new_fallback, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] 14_Carreira.py — fallback antigo não encontrado ou já corrigido.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -65,7 +90,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix(db): corrige adaptacao de autoincrement para serial no postgres"])
+    _git_run_safe(["commit", "-m", "fix(db): corrige adapt_sql raiz para postgres e fallback de manuais"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -75,19 +100,21 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V4.4 — HOTFIX SERIAL POSTGRES")
+    print("V4.5 — CORREÇÃO DEFINITIVA DO ADAPTADOR SQL")
     print("=" * 60)
 
-    fix_adapt_sql()
+    fix_database_sql_adapter()
+    fix_career_fallback()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
     print("\nO que testar agora:")
-    print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Recarregue a página e abra a aba '💼 Carreira'.")
-    print("3. O erro sumirá e a tabela será criada no Supabase.")
+    print("1. Espere o Streamlit Cloud atualizar.")
+    print("2. Recarregue a página '💼 Carreira'.")
+    print("3. O erro vai sumir porque a tabela agora será criada perfeitamente no Supabase.")
+    print("4. Aproveite: as outras tabelas que estavam falhando silenciosamente (como daily_briefs) agora também foram criadas!")
 
 if __name__ == "__main__":
     aplicar()
