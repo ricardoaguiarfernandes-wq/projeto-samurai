@@ -82,6 +82,9 @@ def adapt_sql(sql: str, is_pg: bool) -> str:
     if is_pg:
         sql = sql.replace("?", "%s")
         sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
+        # Correção crucial: troca a string inteira para o formato do Postgres
+        sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+        # Fallback caso venha apenas AUTOINCREMENT
         sql = sql.replace("AUTOINCREMENT", "SERIAL")
     return sql
 

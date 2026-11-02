@@ -1,8 +1,9 @@
 """
-criar_projeto_samurai.py — V4.3 (Hotfix: Tabela manuals no Supabase)
+criar_projeto_samurai.py — V4.4 (Hotfix: Sintaxe do SERIAL no Postgres)
 
 ENTREGAS:
-1. FIX (14_Carreira.py): Adiciona um try/except para criar a tabela 'manuals' caso ela não exista no banco (Postgres/Supabase).
+1. FIX (core/database.py): Corrige a função adapt_sql para trocar 'INTEGER PRIMARY KEY AUTOINCREMENT' por 'SERIAL PRIMARY KEY' (evitando erro de sintaxe).
+2. FIX (14_Carreira.py): Garante que a tabela manuals seja criada corretamente caso não exista.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -27,28 +28,36 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-def fix_career_table_fallback() -> None:
-    p = BASE / "ui" / "pages" / "14_Carreira.py"
+def fix_adapt_sql() -> None:
+    p = BASE / "core" / "database.py"
     txt = read(p)
 
-    if "CREATE TABLE IF NOT EXISTS manuals" in txt:
-        print("[SKIP] 14_Carreira.py — fallback da tabela manuals já existe.")
+    if '"INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"' in txt:
+        print("[SKIP] database.py — adapt_sql já corrigido.")
         return
 
-    old_query = '    manuais = query_all("SELECT id, title, uploaded_at FROM manuals ORDER BY uploaded_at DESC")'
-    
-    new_query = '''    try:
-        manuais = query_all("SELECT id, title, uploaded_at FROM manuals ORDER BY uploaded_at DESC")
-    except Exception:
-        # Fallback: se a tabela não existir no Postgres, cria agora
-        execute("CREATE TABLE IF NOT EXISTS manuals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')))")
-        manuais = []'''
+    old_adapt = '''def adapt_sql(sql: str, is_pg: bool) -> str:
+    if is_pg:
+        sql = sql.replace("?", "%s")
+        sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
+        sql = sql.replace("AUTOINCREMENT", "SERIAL")
+    return sql'''
 
-    if old_query in txt:
-        txt = txt.replace(old_query, new_query, 1)
+    new_adapt = '''def adapt_sql(sql: str, is_pg: bool) -> str:
+    if is_pg:
+        sql = sql.replace("?", "%s")
+        sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
+        # Correção crucial: troca a string inteira para o formato do Postgres
+        sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+        # Fallback caso venha apenas AUTOINCREMENT
+        sql = sql.replace("AUTOINCREMENT", "SERIAL")
+    return sql'''
+
+    if old_adapt in txt:
+        txt = txt.replace(old_adapt, new_adapt, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] 14_Carreira.py — linha de query dos manuais não encontrada.")
+        print("[AVISO] database.py — bloco adapt_sql não encontrado.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -56,7 +65,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix: fallback para criar tabela manuals no postgres"])
+    _git_run_safe(["commit", "-m", "fix(db): corrige adaptacao de autoincrement para serial no postgres"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -66,10 +75,10 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V4.3 — HOTFIX TABELA MANUAIS")
+    print("V4.4 — HOTFIX SERIAL POSTGRES")
     print("=" * 60)
 
-    fix_career_table_fallback()
+    fix_adapt_sql()
     sync_git()
 
     print("\n" + "=" * 60)
@@ -77,8 +86,8 @@ def aplicar() -> None:
     print("=" * 60)
     print("\nO que testar agora:")
     print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Abra a aba '💼 Carreira' novamente.")
-    print("3. O erro sumirá e você poderá fazer o upload do manual normalmente.")
+    print("2. Recarregue a página e abra a aba '💼 Carreira'.")
+    print("3. O erro sumirá e a tabela será criada no Supabase.")
 
 if __name__ == "__main__":
     aplicar()
