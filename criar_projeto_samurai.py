@@ -1,5 +1,5 @@
 """
-aplicar_correcao_patrimonio.py — Corrige a IA Financeira para usar cotações reais.
+aplicar_correcao_patrimonio.py — Força a IA a sugerir 3 ações perenes.
 """
 from __future__ import annotations
 
@@ -36,12 +36,15 @@ with tab_ia:
     acoes_db = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
     rf_db = query_all("SELECT * FROM patrimony_fixed_income")
 
-    # CORREÇÃO: Busca a cotação real de cada ação usando yfinance
+    # Busca a cotação real de cada ação
     texto_acoes = ""
     for a in acoes_db:
         ticker = a['ticker']
+        # Garante que o ticker tenha o .SA para buscar no Yahoo Finance
+        ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
+        
         try:
-            data = yf.Ticker(ticker).history(period="1d")
+            data = yf.Ticker(ticker_busca).history(period="1d")
             if not data.empty:
                 preco_atual = data['Close'].iloc[-1]
                 lucro_pct = ((preco_atual / a['average_price']) - 1) * 100
@@ -60,22 +63,31 @@ with tab_ia:
     with st.form("form_aporte"):
         aporte = st.number_input("Quanto você tem para investir este mês? (R$)", min_value=0.0, step=100.0)
         if st.form_submit_button("Gerar Plano de Alocação", use_container_width=True) and aporte > 0:
-            with st.spinner("Analisando o mercado com dados reais..."):
-                prompt = f\"\"\"Atue como um Consultor Financeiro (CFP) sênior. 
-Tenho R$ {aporte:.2f} para investir.
-AÇÕES (NUNCA vender, são perenes):
+            with st.spinner("Analisando o mercado e buscando as melhores ações perenes..."):
+                
+                # Prompt reformulado para forçar a sugestão de 3 ações perenes
+                prompt = f\"\"\"Atue como um Consultor Financeiro (CFP) sênior.
+Tenho R$ {aporte:.2f} para investir este mês.
+Minha carteira atual de ações perenes (Buy and Hold, NUNCA vender):
 {texto_acoes}
-RENDA FIXA: 
+Minha Renda Fixa:
 {texto_rf}
 
-Sua missão: Com base nas cotações atuais e nos preços médios fornecidos acima, analise se as ações estão descontadas. Direcione parte do aporte se houver oportunidade. Se não, distribua entre novas ações perenes, renda fixa e reserva. Detalhe exatamente onde alocar cada centavo (Ex: R$ 300 em PETR4, R$ 400 no Tesouro Selic) e justifique.\"\"\"
+Sua missão OBRIGATÓRIA:
+1. Analise se as minhas ações atuais estão em bom preço de compra (descontadas).
+2. Se as ações atuais NÃO estiverem descontadas, VOCÊ DEVE me apresentar EXATAMENTE 3 NOVAS AÇÕES PERENES (de setores como energia, saneamento, bancos, seguros, etc.) que estão atualmente com preço justo ou descontado.
+3. Para cada uma das 3 ações sugeridas, explique em um parágrafo: Por que ela é perene (monopólio, moat, dividendos consistentes) e por que o preço está atrativo hoje.
+4. Ao final, faça a divisão exata do aporte de R$ {aporte:.2f} entre Renda Fixa, Reserva de Oportunidade (para quedas futuras) e as Ações (seja nas atuais ou nas 3 novas sugeridas). Justifique a alocação centavo por centavo.
+
+Mantenha um tom profissional, focado no longo prazo e na segurança do patrimônio.\"\"\"
+                
                 st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Plano de Alocação</div><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
 
 with tab_acoes:
     carteira = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
     with st.expander("➕ Adicionar Ação"):
         with st.form("f_a"):
-            t = st.text_input("Ticker (ex: PETR4.SA)").upper()
+            t = st.text_input("Ticker (ex: PETR4.SA, BBAS3.SA)").upper()
             q = st.number_input("Qtd", min_value=1, value=100)
             p = st.number_input("Preço Médio", min_value=0.01, value=30.00)
             if st.form_submit_button("Salvar"):
@@ -110,7 +122,7 @@ def _run(cmd):
 
 def aplicar():
     print("=" * 60)
-    print("⚔️  CORRIGINDO IA FINANCEIRA (COTAÇÕES REAIS)")
+    print("⚔️  ATUALIZANDO IA FINANCEIRA (3 AÇÕES PERENES OBRIGATÓRIAS)")
     print("=" * 60)
     
     cam = "ui/pages/04_Patrimonio.py"
@@ -124,7 +136,7 @@ def aplicar():
 
     print("\n☁️  SINCRONIZANDO COM O GITHUB")
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Fix: IA do Patrimonio agora usa cotacoes reais do yfinance"])
+    _run(["git", "commit", "-m", "Fix: Forca a IA a sugerir 3 acoes perenes na analise"])
     _run(["git", "push", "origin", "main"])
     print("[OK] Push concluído. O Streamlit vai atualizar em instantes.")
     print("=" * 60)
