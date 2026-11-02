@@ -315,8 +315,19 @@ def daily_brief():
     except Exception:
         pending = []
 
+    # Busca as notícias do dia para incluir no brief
+    try:
+        emails = query_all("SELECT subject, content FROM newsletters_inbox ORDER BY received_at DESC LIMIT 3")
+        noticias_ctx = "\n".join([f"[{e['subject']}] {e['content'][:1000]}" for e in emails])
+    except Exception:
+        noticias_ctx = "Nenhuma noticia recebida hoje."
+
     prompt = f"""Voce e o Mentor Samurai, sistema operacional pessoal do Ricardo.
 Data: {today_iso}.
+
+NOTICIAS DE HOJE (Newsletters):
+{noticias_ctx}
+
 Dados do dia:
 - Check-in: {status["checkin"] or "nao realizado"}
 - Burnout score (7d): {status["burnout"]["score"]}/100 (energia {status["burnout"]["avg_energy"]}, sono {status["burnout"]["avg_sleep"]}h, stress {status["burnout"]["avg_stress"]})
@@ -485,13 +496,36 @@ Responda de forma sabia, direta e empatica. Se a pergunta for sobre o diario (ex
 # ============================================================
 
 @app.post("/webhook/email")
-async def receive_email(payload: EmailPayload):
+async def receive_email(payload: EmailPayload, x_webhook_token: str = Header(None)):
+    # 1. Segurança
+    expected_token = os.environ.get("WEBHOOK_EMAIL_TOKEN", "samurai-secret-email")
+    if x_webhook_token != expected_token:
+        raise HTTPException(status_code=401, detail="Token de webhook invalido.")
+
     try:
+        # 2. Evitar duplicatas e limpar HTML
+        import re
+        from bs4 import BeautifulSoup
+        
+        # Limpa o HTML para texto puro
+        soup = BeautifulSoup(payload.content, "html.parser")
+        clean_content = soup.get_text(separator="\n", strip=True)
+        
+        # Verifica se já existe (baseado no assunto e remetente)
+        existe = query_one(
+            "SELECT id FROM newsletters_inbox WHERE subject = ? AND sender = ?",
+            (payload.subject, payload.sender)
+        )
+        
+        if existe:
+            return {"status": "ignored", "message": "Email duplicado."}
+
+        # 3. Salva no banco
         execute(
             "INSERT INTO newsletters_inbox (subject, sender, content) VALUES (?, ?, ?)",
-            (payload.subject, payload.sender, payload.content),
+            (payload.subject, payload.sender, clean_content),
         )
-        return {"status": "success", "message": "Newsletter salva!"}
+        return {"status": "success", "message": "Newsletter limpa e salva!"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

@@ -1,0 +1,14 @@
+{
+  "instrucoes": "No Power Automate, crie um fluxo de 'Quando um novo e-mail chegar'. Adicione uma ação HTTP POST para o seu endpoint.",
+  "URL": "https://samurai-webhook.onrender.com/webhook/email",
+  "Method": "POST",
+  "Headers": {
+    "Content-Type": "application/json",
+    "X-Webhook-Token": "samurai-secret-email"
+  },
+  "Body": {
+    "subject": "@{triggerOutputs()?['body/subject']}",
+    "sender": "@{triggerOutputs()?['body/from']}",
+    "content": "@{triggerOutputs()?['body/body']}"
+  }
+}

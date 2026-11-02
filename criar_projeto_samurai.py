@@ -1,9 +1,11 @@
 """
-criar_projeto_samurai.py — V2.5 (Hotfix: Fallback SQLite e UI Marmita Reativa)
+criar_projeto_samurai.py — V2.6 (Blindagem do Webhook de Email e Integração ao Brief)
 
 ENTREGAS:
-1. FIX (03_Informacao.py): Fallback de segurança para criar a tabela 'daily_briefs' no SQLite local.
-2. FIX (11_Alimentacao.py): O modo de preparo agora muda dinamicamente dependendo da escolha.
+1. SEGURANÇA: Adiciona verificação X-Webhook-Token na rota /webhook/email.
+2. DB: Remove o HTML bruto e salva apenas texto limpo no banco.
+3. LÓGICA: Impede e-mails duplicados.
+4. INTEGRAÇÃO: O endpoint /api/brief agora lê os últimos e-mails e envia para a IA.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -29,63 +31,118 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. INFORMAÇÃO (Fallback da tabela daily_briefs)
+# 1. API — Blindagem do Webhook e Integração ao Brief
 # ============================================================
-def fix_informacao_db() -> None:
-    p = BASE / "ui" / "pages" / "03_Informacao.py"
+def fix_api_webhook_email() -> None:
+    p = BASE / "api_samurai.py"
     txt = read(p)
 
-    if "try:\n        briefs = query_all" in txt:
-        print("[SKIP] 03_Informacao.py — fallback já implementado.")
+    if "X-Webhook-Token" in txt:
+        print("[SKIP] api_samurai.py — webhook já blindado.")
         return
 
-    # Garante o import do execute
-    if "from core.database import query_all" in txt and "execute" not in txt:
-        txt = txt.replace("from core.database import query_all", "from core.database import query_all, execute")
+    # 1.1 Atualizar a rota de email
+    old_webhook = '''@app.post("/webhook/email")
+async def receive_email(payload: EmailPayload):
+    try:
+        execute(
+            "INSERT INTO newsletters_inbox (subject, sender, content) VALUES (?, ?, ?)",
+            (payload.subject, payload.sender, payload.content),
+        )
+        return {"status": "success", "message": "Newsletter salva!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}'''
 
-    old_briefs = '    briefs = query_all("SELECT * FROM daily_briefs ORDER BY brief_date DESC LIMIT 7")'
-    new_briefs = '''    try:
-        briefs = query_all("SELECT * FROM daily_briefs ORDER BY brief_date DESC LIMIT 7")
-    except Exception:
-        execute("CREATE TABLE IF NOT EXISTS daily_briefs (id INTEGER PRIMARY KEY AUTOINCREMENT, brief_date TEXT NOT NULL UNIQUE, content TEXT NOT NULL)")
-        briefs = []'''
+    new_webhook = '''@app.post("/webhook/email")
+async def receive_email(payload: EmailPayload, x_webhook_token: str = Header(None)):
+    # 1. Segurança
+    expected_token = os.environ.get("WEBHOOK_EMAIL_TOKEN", "samurai-secret-email")
+    if x_webhook_token != expected_token:
+        raise HTTPException(status_code=401, detail="Token de webhook invalido.")
 
-    if old_briefs in txt:
-        txt = txt.replace(old_briefs, new_briefs, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] 03_Informacao.py — bloco de query dos briefs não encontrado.")
-
-# ============================================================
-# 2. ALIMENTAÇÃO (Modo de Preparo Dinâmico)
-# ============================================================
-def fix_alimentacao_reativa() -> None:
-    p = BASE / "ui" / "pages" / "11_Alimentacao.py"
-    txt = read(p)
-
-    if "prep_texto = det[\"prep\"]" in txt:
-        print("[SKIP] 11_Alimentacao.py — modo de preparo dinâmico já existe.")
-        return
-
-    old_card = '''    marmita_info = ""
-    if "marmita" in tipo_refeicao.lower():
-        marmita_info = "<br><br><b style='color: #2196F3;'>🍱 Dica de Marmita:</b> Espere esfriar, guarde em potes de vidro fechados. Dura até 3 dias na geladeira. Ao reaquecer, adicione 1 colher de água para não secar."
+    try:
+        # 2. Evitar duplicatas e limpar HTML
+        import re
+        from bs4 import BeautifulSoup
         
-    st.markdown(f'<div class="samurai-card" style="padding: 15px; border-left-color: #F9A825;"><b>🛒 Ingredientes:</b><br>{det["ing"]}<br><br><b>👨‍🍳 Modo de Preparo:</b><br>{det["prep"]}{marmita_info}<br><br><b style="color: #4CAF50;">💪 Por que é bom para Ectomorfo?</b><br>{det["porque"]}</div>', unsafe_allow_html=True)'''
+        # Limpa o HTML para texto puro
+        soup = BeautifulSoup(payload.content, "html.parser")
+        clean_content = soup.get_text(separator="\\n", strip=True)
+        
+        # Verifica se já existe (baseado no assunto e remetente)
+        existe = query_one(
+            "SELECT id FROM newsletters_inbox WHERE subject = ? AND sender = ?",
+            (payload.subject, payload.sender)
+        )
+        
+        if existe:
+            return {"status": "ignored", "message": "Email duplicado."}
 
-    new_card = '''    prep_texto = det["prep"]
-    if "marmita" in tipo_refeicao.lower():
-        prep_texto += "<br><br><b style='color: #2196F3;'>🍱 PARA MARMITA:</b> Espere esfriar e guarde em potes herméticos na geladeira. Dura até 3 dias. Ao reaquecer, adicione 1 colher de água para não secar."
+        # 3. Salva no banco
+        execute(
+            "INSERT INTO newsletters_inbox (subject, sender, content) VALUES (?, ?, ?)",
+            (payload.subject, payload.sender, clean_content),
+        )
+        return {"status": "success", "message": "Newsletter limpa e salva!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}'''
+
+    if old_webhook in txt:
+        txt = txt.replace(old_webhook, new_webhook, 1)
     else:
-        prep_texto += "<br><br><b style='color: #4CAF50;'>🍽️ PARA AGORA:</b> Sirva imediatamente enquanto estiver quente e no ponto."
+        print("[AVISO] api_samurai.py — rota de email antiga não encontrada.")
 
-    st.markdown(f'<div class="samurai-card" style="padding: 15px; border-left-color: #F9A825;"><b>🛒 Ingredientes:</b><br>{det["ing"]}<br><br><b>👨‍🍳 Modo de Preparo:</b><br>{prep_texto}<br><br><b style="color: #4CAF50;">💪 Por que é bom para Ectomorfo?</b><br>{det["porque"]}</div>', unsafe_allow_html=True)'''
+    # 1.2 Injetar os e-mails no prompt do Brief
+    old_prompt = '''    prompt = f"""Voce e o Mentor Samurai, sistema operacional pessoal do Ricardo.
+Data: {today_iso}.
+Dados do dia:'''
 
-    if old_card in txt:
-        txt = txt.replace(old_card, new_card, 1)
+    new_prompt = '''    # Busca as notícias do dia para incluir no brief
+    try:
+        emails = query_all("SELECT subject, content FROM newsletters_inbox ORDER BY received_at DESC LIMIT 3")
+        noticias_ctx = "\\n".join([f"[{e['subject']}] {e['content'][:1000]}" for e in emails])
+    except Exception:
+        noticias_ctx = "Nenhuma noticia recebida hoje."
+
+    prompt = f"""Voce e o Mentor Samurai, sistema operacional pessoal do Ricardo.
+Data: {today_iso}.
+
+NOTICIAS DE HOJE (Newsletters):
+{noticias_ctx}
+
+Dados do dia:'''
+
+    if old_prompt in txt:
+        txt = txt.replace(old_prompt, new_prompt, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] 11_Alimentacao.py — bloco de renderização do card não encontrado.")
+        print("[AVISO] api_samurai.py — bloco do prompt do brief não encontrado.")
+
+# ============================================================
+# 2. CRIAR SCRIPT PARA O POWER AUTOMATE
+# ============================================================
+def create_power_automate_guide() -> None:
+    p = BASE / "power_automate.json"
+    if p.exists():
+        print("[SKIP] power_automate.json já existe.")
+        return
+    
+    conteudo = '''{
+  "instrucoes": "No Power Automate, crie um fluxo de 'Quando um novo e-mail chegar'. Adicione uma ação HTTP POST para o seu endpoint.",
+  "URL": "https://samurai-webhook.onrender.com/webhook/email",
+  "Method": "POST",
+  "Headers": {
+    "Content-Type": "application/json",
+    "X-Webhook-Token": "samurai-secret-email"
+  },
+  "Body": {
+    "subject": "@{triggerOutputs()?['body/subject']}",
+    "sender": "@{triggerOutputs()?['body/from']}",
+    "content": "@{triggerOutputs()?['body/body']}"
+  }
+}'''
+    p.write_text(conteudo, encoding="utf-8")
+    print(f"[OK] {p.name} (guia para configurar o Power Automate)")
 
 # ============================================================
 # SYNC GIT
@@ -96,7 +153,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix: fallback para daily_briefs no sqlite e modo de preparo dinamico"])
+    _git_run_safe(["commit", "-m", "feat: blinda webhook de email, limpa html e integra ao brief diario"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -109,12 +166,12 @@ def sync_git() -> None:
 # ============================================================
 def aplicar() -> None:
     print("=" * 60)
-    print("V2.5 — HOTFIX SQLITE E MARMITA")
+    print("V2.6 — BLINDAGEM E INTEGRAÇÃO DO WEBHOOK DE E-MAIL")
     print("=" * 60)
 
     etapas = [
-        ("Fallback tabela briefs (03_Informacao.py)", fix_informacao_db),
-        ("Modo de preparo reativo (11_Alimentacao.py)", fix_alimentacao_reativa),
+        ("Blindar API e integrar brief (api_samurai.py)", fix_api_webhook_email),
+        ("Gerar guia do Power Automate", create_power_automate_guide),
     ]
 
     for i, (label, fn) in enumerate(etapas, 1):
@@ -126,11 +183,12 @@ def aplicar() -> None:
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que testar agora no app local (localhost:8501):")
-    print("1. A aba Informação vai carregar sem quebrar.")
-    print("2. Em Alimentação, mude o botão de 'Para agora' para 'Para marmita' e veja o texto do card mudar na hora.")
-    print("3. Depois que o Render atualizar (2 min), clique em 'Run workflow' no GitHub Actions.")
-    print("4. O Brief vai aparecer no Streamlit!")
+    print("\nO que você precisa fazer agora no Power Automate:")
+    print("1. Na ação 'HTTP', adicione um novo Header chamado 'X-Webhook-Token'")
+    print("2. O valor do token é: samurai-secret-email")
+    print("   (Você pode mudar isso no Render, na variável WEBHOOK_EMAIL_TOKEN).")
+    print("3. O Power Automate deve enviar o body EXATAMENTE no formato JSON.")
+    print("4. Agora, quando a IA gerar o Brief das 6h, ela vai ler as notícias que chegaram!")
 
 if __name__ == "__main__":
     aplicar()
