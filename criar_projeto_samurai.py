@@ -1,17 +1,16 @@
 """
-criar_projeto_samurai.py — V5.2 (Dashboard de Correlação e Diagnóstico IA)
+criar_projeto_samurai.py — V5.3 (Dashboard Financeiro e Metas de Investimento)
 
 ENTREGAS:
-1. UI (07_Consistencia.py): Adiciona uma nova seção de "Correlação de Performance".
-2. LÓGICA: Usa Pandas para cruzar dados de sono, energia e hábitos dos últimos 30 dias.
-3. IA: Cria o botão "Diagnóstico de Performance" para a IA analisar os gráficos e gerar insights acionáveis.
+1. NAVEGAÇÃO (app.py): Adiciona a nova aba "💸 Finanças" no menu.
+2. UI (15_Financas.py): Cria gráficos de gastos (Pie chart), histórico de comprovantes e um medidor de meta de 20 ativos.
+3. IA: Adiciona um botão de análise financeira que cruza a carteira com os gastos do mês.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
 from __future__ import annotations
 
 import ast
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,100 +29,142 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-def fix_consistencia_correlation() -> None:
-    p = BASE / "ui" / "pages" / "07_Consistencia.py"
+# ============================================================
+# 1. NAVEGAÇÃO (app.py)
+# ============================================================
+def fix_app_nav_financas() -> None:
+    p = BASE / "app.py"
     txt = read(p)
-
-    if "Correlação de Performance" in txt:
-        print("[SKIP] 07_Consistencia.py — correlação já implementada.")
+    if "15_Financas.py" in txt:
+        print("[SKIP] app.py — navegação de finanças já existe.")
         return
 
-    # Marcador onde vamos injetar o código (antes do exportar relatório)
-    marker = 'st.divider()\nst.subheader("📄 Exportar Relatório")'
-    
-    new_section = r'''st.divider()
-st.subheader("📊 Correlação de Performance (30 dias)")
-st.write("O Samurai cruzou seus dados para descobrir o que mais impacta a sua consistência.")
+    old_nav = 'carreira = st.Page("ui/pages/14_Carreira.py", title="💼 Carreira")'
+    new_nav = old_nav + '\nfinancas = st.Page("ui/pages/15_Financas.py", title="💸 Finanças")'
 
-# Busca dados dos últimos 30 dias
-from datetime import timedelta
-import pandas as pd
-import plotly.express as px
+    old_dict = '"⚔️ Comando": [home, consistencia, disciplina, carreira],'
+    new_dict = '"⚔️ Comando": [home, consistencia, disciplina, carreira, financas],'
 
-thirty_days_ago = (today - timedelta(days=30)).isoformat()
-
-# Dados de Check-in
-checkins_30d = query_all("SELECT checkin_date, energy, sleep_hours, stress FROM daily_checkins WHERE checkin_date >= ?", (thirty_days_ago,))
-
-# Dados de Hábitos (quantos foram concluídos por dia)
-habits_30d = query_all("SELECT log_date, COUNT(*) as habits_done FROM habit_logs WHERE done = 1 AND log_date >= ? GROUP BY log_date", (thirty_days_ago,))
-
-if len(checkins_30d) < 5 or len(habits_30d) < 5:
-    st.info("ℹ️ Dados insuficientes para gerar correlações precisas. Continue fazendo check-ins e marcando hábitos por pelo menos 5 dias.")
-else:
-    df_check = pd.DataFrame(checkins_30d)
-    df_habits = pd.DataFrame(habits_30d)
-    
-    # Converte colunas numéricas para float (evita erro de string no Postgres)
-    for col in ['energy', 'sleep_hours', 'stress']:
-        df_check[col] = pd.to_numeric(df_check[col], errors='coerce').fillna(0)
-    df_habits['habits_done'] = pd.to_numeric(df_habits['habits_done'], errors='coerce').fillna(0)
-
-    # Faz o merge das duas tabelas pela data
-    df_merged = pd.merge(df_check, df_habits, left_on='checkin_date', right_on='log_date', how='left').fillna(0)
-    
-    # Calcula a matriz de correlação (apenas colunas numéricas)
-    df_corr = df_merged[['sleep_hours', 'energy', 'stress', 'habits_done']].corr()
-
-    # Desenha o heatmap
-    fig_corr = px.imshow(
-        df_corr, 
-        text_auto=".2f", 
-        aspect="auto", 
-        color_continuous_scale=['#F44336', '#171717', '#4CAF50'],
-        labels=dict(color="Correlação")
-    )
-    fig_corr.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)', 
-        plot_bgcolor='rgba(0,0,0,0)', 
-        font=dict(color='#F2F2F2'),
-        margin=dict(l=20, r=20, t=20, b=20)
-    )
-    st.plotly_chart(fig_corr, use_container_width=True)
-
-    if st.button("🧠 Gerar Diagnóstico de Performance com IA", use_container_width=True):
-        with st.spinner("Analisando suas correlações e traçando insights..."):
-            # Prepara um resumo dos dados para a IA
-            corr_sono = df_corr.loc['sleep_hours', 'habits_done']
-            corr_energia = df_corr.loc['energy', 'habits_done']
-            corr_estresse = df_corr.loc['stress', 'habits_done']
-            
-            prompt = f"""Atue como um Cientista de Dados e Mentor de Alta Performance.
-Aqui estão as correlações dos últimos 30 dias do usuário:
-- Sono vs Conclusão de Hábitos: {corr_sono:.2f}
-- Energia vs Conclusão de Hábitos: {corr_energia:.2f}
-- Estresse vs Conclusão de Hábitos: {corr_estresse:.2f}
-
-Legenda: 1.0 é correlação positiva perfeita, -1.0 é negativa perfeita, 0 é neutro.
-
-Sua missão:
-1. Explique o que esses números significam na prática para a vida do usuário (sem usar jargão matemático complexo).
-2. Dê 2 ações práticas baseadas nesses dados (ex: se sono tem correlação alta com hábitos, mande ele priorizar o sono).
-3. Mantenha o tom de Mentor Samurai: direto, motivador e focado em evolução.
-
-Responda em até 3 parágrafos."""
-
-            diagnostico = ask_gemini(prompt)
-            st.markdown(f'<div class="samurai-card" style="border-left-color: #2196F3;"><div class="titulo">Diagnóstico do Mentor</div><div style="white-space: pre-wrap;">{diagnostico}</div></div>', unsafe_allow_html=True)
-
-st.divider()
-st.subheader("📄 Exportar Relatório")'''
-
-    if marker in txt:
-        txt = txt.replace(marker, new_section, 1)
+    if old_nav in txt and old_dict in txt:
+        txt = txt.replace(old_nav, new_nav, 1)
+        txt = txt.replace(old_dict, new_dict, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] 07_Consistencia.py — marcador para correlação não encontrado.")
+        print("[AVISO] app.py — estrutura de navegação não encontrada.")
+
+# ============================================================
+# 2. UI DA PÁGINA DE FINANÇAS
+# ============================================================
+def create_financas_page() -> None:
+    p = BASE / "ui" / "pages" / "15_Financas.py"
+    if p.exists():
+        print("[SKIP] 15_Financas.py — página já existe.")
+        return
+
+    content = '''import streamlit as st
+import sys
+import pandas as pd
+import plotly.express as px
+from pathlib import Path
+from datetime import date
+
+_p = Path(__file__).resolve().parents[2]
+if str(_p) not in sys.path:
+    sys.path.insert(0, str(_p))
+
+from core.database import execute, query_all
+from core.schema import init_db
+from services.ai import ask_gemini
+
+init_db()
+st.title("💸 Finanças & Gastos")
+st.caption("Controle de gastos capturados via Telegram e acompanhamento da meta de investimentos.")
+
+hoje = date.today().isoformat()
+mes_atual = hoje[:7] # Formato YYYY-MM
+
+# --- BUSCA DE DADOS ---
+gastos = query_all("SELECT * FROM expenses ORDER BY expense_date DESC")
+acoes = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
+rf = query_all("SELECT * FROM patrimony_fixed_income")
+
+# Calcula total de gastos no mês
+gastos_mes = [g for g in gastos if g['expense_date'].startswith(mes_atual)]
+total_mes = sum(g['amount'] for g in gastos_mes)
+
+# --- VISÃO GERAL ---
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown(f"""<div class="samurai-card" style="border-left-color: #F44336;"><div class="titulo">Gastos do Mês</div><div class="valor">R$ {total_mes:.2f}</div></div>""", unsafe_allow_html=True)
+with col2:
+    st.markdown(f"""<div class="samurai-card" style="border-left-color: #2196F3;"><div class="titulo">Ativos na Carteira</div><div class="valor">{len(acoes)} / 20</div></div>""", unsafe_allow_html=True)
+with col3:
+    st.markdown(f"""<div class="samurai-card" style="border-left-color: #4CAF50;"><div class="titulo">Renda Fixa</div><div class="valor">{len(rf)} ativos</div></div>""", unsafe_allow_html=True)
+
+st.divider()
+
+# --- GRÁFICO DE GASTOS ---
+st.subheader("🍕 Para onde o dinheiro está indo?")
+if not gastos:
+    st.info("Nenhum gasto registrado ainda. Envie uma foto de comprovante no Telegram!")
+else:
+    df = pd.DataFrame(gastos)
+    df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
+    
+    # Agrupa por categoria
+    df_cat = df.groupby('category')['amount'].sum().reset_index()
+    
+    fig = px.pie(df_cat, values='amount', names='category', hole=0.4, 
+                 color_discrete_sequence=px.colors.sequential.Reds_r)
+    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#F2F2F2'))
+    st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander("📄 Ver Histórico de Gastos Detalhado"):
+        st.dataframe(df[['expense_date', 'description', 'amount', 'category']], use_container_width=True)
+
+st.divider()
+
+# --- METAS E ANÁLISE IA ---
+st.subheader("🎯 Meta de Diversificação Global")
+st.write("Seu objetivo é ter 15 a 20 ativos (B3, BDRs e ETFs) + Renda Fixa Global.")
+
+progresso = min(len(acoes) / 20.0, 1.0)
+st.progress(progresso)
+st.caption(f"Progresso da meta: {len(acoes)} de 20 ações cadastradas.")
+
+if st.button("🧠 Gerar Análise de Gastos e Investimentos com IA", use_container_width=True):
+    with st.spinner("Analisando suas finanças..."):
+        # Contexto para a IA
+        resumo_gastos = ""
+        if gastos_mes:
+            for g in gastos_mes[:10]: # Pega os últimos 10
+                resumo_gastos += f"- {g['description']} (R$ {g['amount']}) [{g['category']}]\\n"
+        else:
+            resumo_gastos = "Nenhum gasto registrado este mês."
+
+        ctx_acoes = ", ".join([a['ticker'] for a in acoes]) if acoes else "Nenhuma ação cadastrada."
+        ctx_rf = ", ".join([r['name'] for r in rf]) if rf else "Nenhuma renda fixa cadastrada."
+
+        prompt = f"""Atue como o Mentor Financeiro do Projeto Samurai.
+O usuário quer chegar a 20 ações globais e diversificar a renda fixa.
+
+CARTEIRA ATUAL:
+- Ações: {ctx_acoes}
+- Renda Fixa: {ctx_rf}
+
+GASTOS DO MÊS (Capturados via OCR):
+{resumo_gastos}
+
+Sua missão:
+1. Avalie os gastos: Ele está gastando com futilidades que atrasam o investimento? Ou os gastos são saudáveis?
+2. Analise a carteira: Está diversificada? Faltam setores ou proteção cambial (BDRs/ETFs)?
+3. Dê 2 conselhos práticos para o próximo mês, focando em cortar o excesso e alocar o dinheiro na meta das 20 ações.
+Mantenha o tom firme, direto e sem enrolação.
+"""
+        analise = ask_gemini(prompt)
+        st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Visão do Mentor Financeiro</div><div style="white-space: pre-wrap;">{analise}</div></div>', unsafe_allow_html=True)
+'''
+    write_validated(p, content)
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -131,7 +172,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: adiciona dashboard de correlacao de habitos e diagnostico com ia"])
+    _git_run_safe(["commit", "-m", "feat: cria dashboard financeiro com graficos de gastos e meta de acoes"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -141,10 +182,18 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V5.2 — CORRELAÇÃO DE HÁBITOS E DIAGNÓSTICO IA")
+    print("V5.3 — DASHBOARD FINANCEIRO E METAS")
     print("=" * 60)
 
-    fix_consistencia_correlation()
+    etapas = [
+        ("Adicionar página no menu (app.py)", fix_app_nav_financas),
+        ("Criar interface de finanças (15_Financas.py)", create_financas_page),
+    ]
+
+    for i, (label, fn) in enumerate(etapas, 1):
+        print(f"\n[{i}/{len(etapas)}] {label}")
+        fn()
+
     sync_git()
 
     print("\n" + "=" * 60)
@@ -152,10 +201,9 @@ def aplicar() -> None:
     print("=" * 60)
     print("\nO que testar agora:")
     print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Vá para a aba 'Consistência'.")
-    print("3. Role até o final e veja o novo gráfico de calor (Heatmap).")
-    print("4. Clique em 'Gerar Diagnóstico de Performance com IA'.")
-    print("5. A IA vai ler os dados do gráfico e te dar insights exclusivos sobre a sua rotina!")
+    print("2. Clique na nova aba '💸 Finanças' no menu esquerdo.")
+    print("3. Veja o gráfico de pizza com os gastos que você enviou pelo Telegram.")
+    print("4. Clique em 'Gerar Análise de Gastos e Investimentos com IA' para ver o veredito do Mentor.")
 
 if __name__ == "__main__":
     aplicar()

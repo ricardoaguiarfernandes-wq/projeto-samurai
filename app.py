@@ -156,6 +156,7 @@ home = st.Page("ui/pages/00_Home.py", title="🏯 Dojo", default=True)
 consistencia = st.Page("ui/pages/07_Consistencia.py", title="🎯 Consistência")
 disciplina = st.Page("ui/pages/13_Disciplina.py", title="🛡️ Disciplina")
 carreira = st.Page("ui/pages/14_Carreira.py", title="💼 Carreira")
+financas = st.Page("ui/pages/15_Financas.py", title="💸 Finanças")
 corpo = st.Page("ui/pages/01_Corpo.py", title="💪 Corpo")
 mente = st.Page("ui/pages/02_Mente.py", title="🧠 Mente")
 informacao = st.Page("ui/pages/03_Informacao.py", title="📰 Informação")
@@ -168,7 +169,7 @@ filosofia = st.Page("ui/pages/12_Filosofia.py", title="🏛️ Filosofia")
 
 pg = st.navigation(
     {
-        "⚔️ Comando": [home, consistencia, disciplina, carreira],
+        "⚔️ Comando": [home, consistencia, disciplina, carreira, financas],
         "🏛️ Pilares": [corpo, mente, informacao, patrimonio, descanso, autoconhecimento, religiao, alimentacao, filosofia],
     }
 )
