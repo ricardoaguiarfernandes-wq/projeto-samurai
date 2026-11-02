@@ -371,7 +371,9 @@ Sua resposta DEVE ser um JSON valido com EXATAMENTE estas chaves (sem texto ante
 REGRAS ESTRITAS:
 - NUNCA use "ou". Crave a escolha.
 - Se burnout >= 60, incluir "Descanso e sono" em top_3_priorities.
-- O campo "training" DEVE ser exatamente "{treino_hoje}", adaptando apenas a intensidade baseada no burnout.
+- O campo "training" DEVE ser exatamente "{treino_hoje}". 
+- Filosofia Samurai: O usuário está no nível INICIANTE. O treino recomendado deve ser para iniciantes, com foco em evolução para o nível AVANÇADO.
+- Se o treino for "Corrida", foque apenas em dicas de corrida/cardio. NÃO mencione musculação ou dicas de "ectomorfo".
 - Versiculo deve ser real (nao invente referencia nem texto).
 - Responda APENAS o JSON. Nada fora do bloco.
 """
