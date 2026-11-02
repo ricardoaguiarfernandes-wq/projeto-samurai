@@ -24,18 +24,39 @@ with tab_ia:
     acoes_db = query_all("SELECT * FROM portfolio WHERE ticker NOT LIKE 'RF:%'")
     rf_db = query_all("SELECT * FROM patrimony_fixed_income")
 
-    texto_acoes = "".join([f"- {a['ticker']}: {a['quantity']} cotas (PM: R$ {a['average_price']})\n" for a in acoes_db])
+    # CORREÇÃO: Busca a cotação real de cada ação usando yfinance
+    texto_acoes = ""
+    for a in acoes_db:
+        ticker = a['ticker']
+        try:
+            data = yf.Ticker(ticker).history(period="1d")
+            if not data.empty:
+                preco_atual = data['Close'].iloc[-1]
+                lucro_pct = ((preco_atual / a['average_price']) - 1) * 100
+                texto_acoes += f"- {ticker}: {a['quantity']} cotas | Preço Médio: R$ {a['average_price']:.2f} | Cotação Atual: R$ {preco_atual:.2f} | Rentabilidade: {lucro_pct:.2f}%\n"
+            else:
+                texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Cotação indisponível)\n"
+        except Exception:
+            texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Erro na API)\n"
+
     texto_rf = "".join([f"- {r['name']}: R$ {r['amount']} (Taxa: {r['rate']})\n" for r in rf_db])
 
-    with st.expander("Ver Carteira Atual"):
-        st.markdown(f'**Ações:**\n{texto_acoes if texto_acoes else "Vazio"}')
-        st.markdown(f'**Renda Fixa:**\n{texto_rf if texto_rf else "Vazio"}')
+    with st.expander("Ver Carteira Atual (com cotações reais)"):
+        st.markdown(f"**Ações:**\n{texto_acoes if texto_acoes else 'Vazio'}")
+        st.markdown(f"**Renda Fixa:**\n{texto_rf if texto_rf else 'Vazio'}")
 
     with st.form("form_aporte"):
         aporte = st.number_input("Quanto você tem para investir este mês? (R$)", min_value=0.0, step=100.0)
         if st.form_submit_button("Gerar Plano de Alocação", use_container_width=True) and aporte > 0:
-            with st.spinner("Analisando o mercado..."):
-                prompt = f"Atue como um Consultor Financeiro (CFP) sênior. \nTenho R$ {aporte:.2f} para investir.\nAÇÕES (NUNCA vender):\n{texto_acoes}\nRENDA FIXA: \n{texto_rf}\n\nSua missão: Analise se as ações atuais estão descontadas e direcione parte do aporte. Se não, distribua entre novas ações perenes, renda fixa e reserva. Detalhe exatamente onde alocar cada centavo (Ex: R$ 300 em PETR4, R$ 400 no Tesouro Selic) e justifique."
+            with st.spinner("Analisando o mercado com dados reais..."):
+                prompt = f"""Atue como um Consultor Financeiro (CFP) sênior. 
+Tenho R$ {aporte:.2f} para investir.
+AÇÕES (NUNCA vender, são perenes):
+{texto_acoes}
+RENDA FIXA: 
+{texto_rf}
+
+Sua missão: Com base nas cotações atuais e nos preços médios fornecidos acima, analise se as ações estão descontadas. Direcione parte do aporte se houver oportunidade. Se não, distribua entre novas ações perenes, renda fixa e reserva. Detalhe exatamente onde alocar cada centavo (Ex: R$ 300 em PETR4, R$ 400 no Tesouro Selic) e justifique."""
                 st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Plano de Alocação</div><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
 
 with tab_acoes:
