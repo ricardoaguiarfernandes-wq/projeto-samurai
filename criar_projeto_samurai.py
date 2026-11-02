@@ -1,5 +1,5 @@
 """
-criar_projeto_samurai.py — Adiciona links de busca do YouTube nos podcasts.
+criar_projeto_samurai.py — Download de podcast sem precisar de FFmpeg (.m4a)
 """
 from __future__ import annotations
 
@@ -43,9 +43,7 @@ with st.expander("🎧 Podcasts para o Treino (Recomendação IA + Download)", e
     
     if st.button("🎙️ Sugerir 3 Podcasts", use_container_width=True):
         with st.spinner("Buscando recomendações..."):
-            # O Prompt em linha única para evitar erro de indentação
             prompt = f"Atue como curador de conteúdo. Sugira 3 episódios ou podcasts focados em '{tema_podcast}' para ouvir treinando. Para cada um, forneça: 1. Nome do Podcast e Título do Episódio. 2. Um resumo curto. 3. Por que é bom para treinar. 4. OBRIGATÓRIO: Um link de busca do YouTube para o usuário achar o vídeo. Formate o link exatamente assim (trocando os espaços por +): [🎬 Buscar no YouTube](https://www.youtube.com/results?search_query=Nome+do+Podcast+Titulo+do+Episodio)"
-            
             st.markdown(f'<div class="samurai-card" style="border-left-color: #9C27B0;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>', unsafe_allow_html=True)
 
     st.divider()
@@ -58,31 +56,27 @@ with st.expander("🎧 Podcasts para o Treino (Recomendação IA + Download)", e
                 if "youtube.com" in link_podcast or "youtu.be" in link_podcast:
                     import yt_dlp
                     with tempfile.TemporaryDirectory() as tmpdir:
+                        # MUDANÇA AQUI: Baixa o áudio original (m4a) sem precisar do FFmpeg
                         ydl_opts = {
-                            'format': 'bestaudio/best',
+                            'format': 'bestaudio[ext=m4a]/bestaudio',
                             'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                             'quiet': True,
                             'noplaylist': True,
-                            'postprocessors': [{
-                                'key': 'FFmpegExtractAudio',
-                                'preferredcodec': 'mp3',
-                                'preferredquality': '192',
-                            }],
                         }
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             info = ydl.extract_info(link_podcast, download=True)
-                            mp3_filename = ydl.prepare_filename(info).rsplit('.', 1)[0] + '.mp3'
-                            mp3_path = os.path.join(tmpdir, mp3_filename)
+                            filename = ydl.prepare_filename(info)
+                            ext = info.get('ext', 'm4a')
                             
-                            with open(mp3_path, "rb") as f:
+                            with open(filename, "rb") as f:
                                 audio_bytes = f.read()
                             
                             st.success(f"Áudio pronto: {info.get('title', 'Podcast')}")
                             st.download_button(
-                                label="💾 Salvar MP3 no Computador",
+                                label=f"💾 Salvar Áudio ({ext}) no Computador",
                                 data=audio_bytes,
-                                file_name=f"{info.get('title', 'Podcast')}.mp3",
-                                mime="audio/mpeg",
+                                file_name=f"{info.get('title', 'Podcast')}.{ext}",
+                                mime="audio/mp4" if ext == "m4a" else "audio/webm",
                                 use_container_width=True
                             )
                 else:
@@ -99,7 +93,7 @@ with st.expander("🎧 Podcasts para o Treino (Recomendação IA + Download)", e
                     else:
                         st.error("Falha ao baixar o MP3. Verifique o link.")
             except Exception as e:
-                st.error(f"Erro ao preparar o download (O FFmpeg está instalado?): {e}")
+                st.error(f"Erro ao preparar o download: {e}")
 
 st.divider()
 
@@ -272,7 +266,7 @@ def _run(cmd):
 
 def aplicar():
     print("=" * 60)
-    print("⚔️  ADICIONANDO LINKS DE PODCAST")
+    print("⚔️  CORRIGINDO DOWNLOAD DE PODCAST (.M4A SEM FFMPEG)")
     print("=" * 60)
     
     cam = "ui/pages/01_Corpo.py"
@@ -286,7 +280,7 @@ def aplicar():
 
     print("\n☁️  SINCRONIZANDO COM O GITHUB")
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Feat: Adiciona links de busca do YouTube nas sugestoes de podcast"])
+    _run(["git", "commit", "-m", "Fix: Baixar podcast em m4a sem precisar de FFmpeg"])
     _run(["git", "push", "origin", "main"])
     print("[OK] Push concluído. O Streamlit vai atualizar em instantes.")
     print("=" * 60)
