@@ -359,6 +359,24 @@ def daily_brief():
     except Exception:
         carreira_ctx = "Erro ao ler carreira."
 
+    # Busca Clima em Macaé (Open-Meteo)
+    try:
+        w_req = requests.get("https://api.open-meteo.com/v1/forecast?latitude=-22.376&longitude=-41.786&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Sao_Paulo").json()
+        w_code = w_req["daily"]["weather_code"][0]
+        w_rain = w_req["daily"]["precipitation_probability_max"][0]
+        w_max = w_req["daily"]["temperature_2m_max"][0]
+        clima_ctx = f"Chuva: {w_rain}%, Temp Max: {w_max}°C"
+    except Exception:
+        clima_ctx = "Clima indisponível."
+
+    # Gera link do Google Calendar
+    import urllib.parse
+    from datetime import datetime, timedelta
+    cal_start = datetime.now().strftime("%Y%m%dT180000")
+    cal_end = (datetime.now() + timedelta(hours=1)).strftime("%Y%m%dT190000")
+    treino_encoded = urllib.parse.quote(f"Treino: {treino_hoje}")
+    cal_link = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={treino_encoded}&dates={cal_start}/{cal_end}"
+
     prompt = f"""Atue como o Conselho de Mestres do Projeto Samurai. Você é a fusão de três especialistas:
 1. Mestre Financeiro (Foco: Proteção patrimonial, notícias e longo prazo).
 2. Mestre Treinador (Foco: Hipertrofia, cardio, recuperação e Burnout).
@@ -375,6 +393,7 @@ DADOS DO DIA ({today_iso}):
 {carreira_ctx}
 
 CONTEXTO EXTERNO:
+- Clima em Macaé Hoje: {clima_ctx}
 - Notícias Recentes: 
 {noticias_ctx}
 - Carteira de Investimentos: {carteira_ctx}
@@ -418,7 +437,8 @@ REGRAS ESTRITAS:
             + "\n".join(f"  {i+1}. {p}" for i, p in enumerate(brief.get("top_3_priorities", [])))
             + f"\n\nTreino: {brief.get('training', '-')}\n\n"
             f"Versiculo: {brief.get('verse_of_the_day', '-')}\n\n"
-            f"{brief.get('closing', '')}"
+            f"{brief.get('closing', '')}\n\n"
+            f"📅 [Adicionar Treino no Google Calendar]({cal_link})"
         )
     except Exception:
         txt = ""
