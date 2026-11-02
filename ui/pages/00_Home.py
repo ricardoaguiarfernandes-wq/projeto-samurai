@@ -17,6 +17,26 @@ from core.database import query_all, query_one
 today_iso = date.today().isoformat()
 
 st.title("🏯 Dojo")
+
+# --- GAMIFICAÇÃO ---
+stats = query_one("SELECT xp FROM user_stats WHERE id = 1") or {"xp": 0}
+xp_total = stats["xp"] if stats else 0
+nivel = (xp_total // 100) + 1
+ranks = {1: "Ronin", 2: "Ashigaru", 3: "Samurai", 4: "Hatamoto", 5: "Daimyo"}
+rank_atual = ranks.get(nivel, "Lenda")
+
+st.markdown(f"""
+<div class="samurai-card" style="display: flex; justify-content: space-between; align-items: center; border-left-color: #F9A825;">
+    <div>
+        <div class="titulo">Patente</div>
+        <div class="valor">Nível {nivel} - {rank_atual}</div>
+    </div>
+    <div style="text-align: right;">
+        <div class="titulo">Experiência</div>
+        <div class="valor">{xp_total} XP</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 DIAS_SEMANA = {
     "Monday": "Segunda-feira", "Tuesday": "Terça-feira", "Wednesday": "Quarta-feira",
     "Thursday": "Quinta-feira", "Friday": "Sexta-feira", "Saturday": "Sábado", "Sunday": "Domingo"

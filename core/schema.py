@@ -17,6 +17,7 @@ def get_ddl():
         """CREATE TABLE IF NOT EXISTS daily_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, checkin_date TEXT NOT NULL UNIQUE, energy INTEGER NOT NULL, sleep_hours REAL NOT NULL, mood TEXT, stress INTEGER NOT NULL, notes TEXT);""",
         """CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_date TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, category TEXT, notes TEXT);""",
         """CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, rate TEXT);""",
+        """CREATE TABLE IF NOT EXISTS user_stats (id INTEGER PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1);""",
         """CREATE TABLE IF NOT EXISTS journal_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",
         """CREATE TABLE IF NOT EXISTS book_progress (id INTEGER PRIMARY KEY AUTOINCREMENT, book_title TEXT NOT NULL UNIQUE, current_page INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, notes TEXT, last_update TEXT NOT NULL DEFAULT (datetime('now')));""",
         """CREATE TABLE IF NOT EXISTS exercise_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, log_date TEXT NOT NULL, exercise_name TEXT NOT NULL, reps INTEGER NOT NULL DEFAULT 0, sets INTEGER NOT NULL DEFAULT 1, notes TEXT, UNIQUE (log_date, exercise_name));""",
@@ -94,3 +95,6 @@ def init_db() -> None:
     for name, pillar, desc in SEED_HABITS:
         if not query_one("SELECT id FROM habits WHERE name = ?", (name,)):
             execute("INSERT INTO habits (name, pillar, description) VALUES (?, ?, ?)", (name, pillar, desc))
+
+    if not query_one("SELECT id FROM user_stats WHERE id = 1"):
+        execute("INSERT INTO user_stats (id, xp, level) VALUES (1, 0, 1)")
