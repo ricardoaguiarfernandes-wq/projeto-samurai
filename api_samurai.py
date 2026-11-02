@@ -437,6 +437,69 @@ REGRAS ESTRITAS:
     return brief
 
 
+
+# ============================================================
+# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Câmara, Senado, ALERJ, Macaé)
+# ============================================================
+@app.get("/api/daily-news", dependencies=[Depends(require_token)])
+def daily_news():
+    import feedparser
+    import requests
+    from bs4 import BeautifulSoup
+    from datetime import datetime, timedelta
+
+    yesterday = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
+    noticias = []
+
+    # 1. Câmara dos Deputados (RSS)
+    try:
+        feed = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
+        for entry in feed.entries[:5]:
+            published = getattr(entry, 'published', '')
+            if yesterday in published or not published:
+                noticias.append(f"[Câmara] {entry.title}")
+    except Exception as e:
+        print(f"Erro Câmara RSS: {e}")
+
+    # 2. Senado Federal (RSS)
+    try:
+        feed = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
+        for entry in feed.entries[:5]:
+            published = getattr(entry, 'published', '')
+            if yesterday in published or not published:
+                noticias.append(f"[Senado] {entry.title}")
+    except Exception as e:
+        print(f"Erro Senado RSS: {e}")
+
+    # 3. ALERJ (Scraping)
+    try:
+        r = requests.get("https://www.alerj.rj.gov.br/Comunicacao/SalaDeImprensa/Noticias", timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        # Pega os títulos das notícias (classe genérica, pode precisar de ajuste)
+        for h in soup.find_all(["h2", "h3"], class_=True)[:5]:
+            titulo = h.get_text(strip=True)
+            if titulo and len(titulo) > 20:
+                noticias.append(f"[ALERJ] {titulo}")
+    except Exception as e:
+        print(f"Erro ALERJ scraping: {e}")
+
+    # 4. Câmara de Macaé (Scraping)
+    try:
+        r = requests.get("https://cmmacae.rj.gov.br/noticias/", timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        for h in soup.find_all(["h2", "h3"], class_=True)[:5]:
+            titulo = h.get_text(strip=True)
+            if titulo and len(titulo) > 20:
+                noticias.append(f"[Macaé] {titulo}")
+    except Exception as e:
+        print(f"Erro Macaé scraping: {e}")
+
+    if not noticias:
+        return {"text": "📰 Nenhuma notícia legislativa nova foi encontrada para ontem."}
+
+    texto_final = "🏛️ **Notícias Legislativas de Ontem**\n\n" + "\n".join([f"• {n}" for n in noticias[:15]])
+    return {"text": texto_final}
+
 # ============================================================
 # WEBHOOK DO TELEGRAM (Recebe Fotos e Textos)
 # ============================================================

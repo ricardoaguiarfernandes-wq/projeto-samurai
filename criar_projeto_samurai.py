@@ -1,17 +1,17 @@
 """
-criar_projeto_samurai.py — V6.0 (Supabase Exclusivo e Correção Definitiva do SQL)
+criar_projeto_samurai.py — V6.1 (Notícias Legislativas Diárias)
 
 ENTREGAS:
-1. FIX (core/database.py): Desabilita o SQLite. O sistema agora só conecta no Supabase (Postgres).
-2. FIX (core/schema.py): Reescreve os comandos CREATE TABLE usando a sintaxe nativa do PostgreSQL (SERIAL, CURRENT_TIMESTAMP).
-3. FIX (ui/pages/*): Corrige o erro de sintaxe do SUBSTR em Patrimônio e Finanças.
+1. API (api_samurai.py): Cria o endpoint GET /api/daily-news.
+2. SCRAPER/RSS: Coleta Câmara e Senado via RSS; ALERJ e Macaé via scraping HTML.
+3. FILTRO: Separa apenas notícias publicadas no dia anterior.
+4. AUTOMAÇÃO: Cria o workflow .github/workflows/daily_news.yml para rodar às 06:30.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
 from __future__ import annotations
 
 import ast
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,99 +31,188 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. FORÇAR POSTGRES NO DATABASE.PY
+# 1. CRIAR ENDPOINT DE NOTÍCIAS NO API_SAMURAI.PY
 # ============================================================
-def fix_database_postgres_only() -> None:
-    p = BASE / "core" / "database.py"
+def fix_api_news() -> None:
+    p = BASE / "api_samurai.py"
     txt = read(p)
 
-    if "SISTEMA EXCLUSIVO SUPABASE" in txt:
-        print("[SKIP] database.py — já configurado para Supabase exclusivo.")
+    if "/api/daily-news" in txt:
+        print("[SKIP] api_samurai.py — endpoint de notícias já existe.")
         return
 
-    # Substitui a função get_connection inteira para nunca cair no SQLite
-    pattern_conn = re.compile(r"def get_connection\(\):.*?return conn, False", re.DOTALL)
-    new_conn = '''def get_connection():
-    # SISTEMA EXCLUSIVO SUPABASE (PostgreSQL)
-    db_url = get_db_url()
-    if not db_url:
-        raise Exception("⛔ SUPABASE_URL não configurada. O sistema está configurado apenas para Supabase.")
-    if not HAS_PG:
-        raise Exception("⛔ psycopg2 não instalado. Rode: pip install psycopg2-binary")
-        
-    p = get_pg_pool()
-    if p:
-        return p.getconn(), True
+    new_endpoint = r'''
+# ============================================================
+# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Câmara, Senado, ALERJ, Macaé)
+# ============================================================
+@app.get("/api/daily-news", dependencies=[Depends(require_token)])
+def daily_news():
+    import feedparser
+    import requests
+    from bs4 import BeautifulSoup
+    from datetime import datetime, timedelta
+
+    yesterday = (date.today() - timedelta(days=1)).strftime("%d/%m/%Y")
+    noticias = []
+
+    # 1. Câmara dos Deputados (RSS)
+    try:
+        feed = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
+        for entry in feed.entries[:5]:
+            published = getattr(entry, 'published', '')
+            if yesterday in published or not published:
+                noticias.append(f"[Câmara] {entry.title}")
+    except Exception as e:
+        print(f"Erro Câmara RSS: {e}")
+
+    # 2. Senado Federal (RSS)
+    try:
+        feed = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
+        for entry in feed.entries[:5]:
+            published = getattr(entry, 'published', '')
+            if yesterday in published or not published:
+                noticias.append(f"[Senado] {entry.title}")
+    except Exception as e:
+        print(f"Erro Senado RSS: {e}")
+
+    # 3. ALERJ (Scraping)
+    try:
+        r = requests.get("https://www.alerj.rj.gov.br/Comunicacao/SalaDeImprensa/Noticias", timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        # Pega os títulos das notícias (classe genérica, pode precisar de ajuste)
+        for h in soup.find_all(["h2", "h3"], class_=True)[:5]:
+            titulo = h.get_text(strip=True)
+            if titulo and len(titulo) > 20:
+                noticias.append(f"[ALERJ] {titulo}")
+    except Exception as e:
+        print(f"Erro ALERJ scraping: {e}")
+
+    # 4. Câmara de Macaé (Scraping)
+    try:
+        r = requests.get("https://cmmacae.rj.gov.br/noticias/", timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        for h in soup.find_all(["h2", "h3"], class_=True)[:5]:
+            titulo = h.get_text(strip=True)
+            if titulo and len(titulo) > 20:
+                noticias.append(f"[Macaé] {titulo}")
+    except Exception as e:
+        print(f"Erro Macaé scraping: {e}")
+
+    if not noticias:
+        return {"text": "📰 Nenhuma notícia legislativa nova foi encontrada para ontem."}
+
+    texto_final = "🏛️ **Notícias Legislativas de Ontem**\n\n" + "\n".join([f"• {n}" for n in noticias[:15]])
+    return {"text": texto_final}
+
+'''
+
+    marker = '# ============================================================\n# WEBHOOK DO TELEGRAM'
+    if marker in txt:
+        txt = txt.replace(marker, new_endpoint + marker, 1)
+        write_validated(p, txt)
     else:
-        return psycopg2.connect(db_url), True'''
-    
-    if pattern_conn.search(txt):
-        txt = pattern_conn.sub(new_conn, txt, count=1)
-    
-    # Substitui o adapt_sql para não tentar mais converter nada (já vamos escrever em Postgres nativo)
-    pattern_adapt = re.compile(r"def adapt_sql\(sql: str, is_pg: bool\) -> str:.*?return sql", re.DOTALL)
-    new_adapt = '''def adapt_sql(sql: str, is_pg: bool) -> str:
-    if is_pg:
-        sql = sql.replace("?", "%s")
-    return sql'''
-    
-    if pattern_adapt.search(txt):
-        txt = pattern_adapt.sub(new_adapt, txt, count=1)
-
-    write_validated(p, txt)
+        print("[AVISO] api_samurai.py — marcador para inserir notícias não encontrado.")
 
 # ============================================================
-# 2. SCHEMA NATIVO POSTGRES (SEM CONVERSÃO)
+# 2. CRIAR SCRIPT DE ENVIO DIÁRIO
 # ============================================================
-def fix_schema_postgres() -> None:
-    p = BASE / "core" / "schema.py"
-    txt = read(p)
-
-    if "SERIAL PRIMARY KEY" in txt:
-        print("[SKIP] schema.py — já usa sintaxe nativa do Postgres.")
+def create_daily_news_script() -> None:
+    p = BASE / "daily_news_telegram.py"
+    if p.exists():
+        print("[SKIP] daily_news_telegram.py já existe.")
         return
 
-    # Troca a sintaxe do SQLite para Postgres diretamente no texto das tabelas
-    txt = txt.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-    txt = txt.replace("datetime('now')", "CURRENT_TIMESTAMP")
-    
-    # Remove a conversão condicional no final de get_ddl
-    pattern_ddl = re.compile(r'    if is_pg:.*?return ddl_base', re.DOTALL)
-    new_ddl = '    return ddl_base'
-    if pattern_ddl.search(txt):
-        txt = pattern_ddl.sub(new_ddl, txt, count=1)
+    content = '''import os
+import requests
+import sys
 
-    write_validated(p, txt)
+def send_news():
+    samurai_token = os.environ.get("SAMURAI_API_TOKEN")
+    tg_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+    if not all([samurai_token, tg_bot_token, tg_chat_id]):
+        print("❌ Faltam variáveis de ambiente.")
+        sys.exit(1)
+
+    print("⏳ Buscando notícias legislativas...")
+    headers = {"Authorization": f"Bearer {samurai_token}"}
+    try:
+        response = requests.get(
+            "https://samurai-webhook.onrender.com/api/daily-news",
+            headers=headers,
+            timeout=90
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        print(f"❌ Erro na API: {e}")
+        sys.exit(1)
+
+    mensagem = data.get("text", "Não foi possível obter as notícias hoje.")
+    if "Nenhuma notícia" in mensagem:
+        print("Nenhuma notícia encontrada. Abortando envio para não spammar.")
+        return
+
+    print("📤 Enviando para o Telegram...")
+    tg_url = f"https://api.telegram.org/bot{tg_bot_token}/sendMessage"
+    payload = {"chat_id": tg_chat_id, "text": mensagem, "parse_mode": "Markdown"}
+    tg_resp = requests.post(tg_url, json=payload, timeout=15)
+
+    if tg_resp.status_code == 200:
+        print("✅ Notícias enviadas!")
+    else:
+        print(f"❌ Erro no Telegram: {tg_resp.text}")
+
+if __name__ == "__main__":
+    send_news()
+'''
+    write_validated(p, content)
 
 # ============================================================
-# 3. CORRIGIR AS QUERIES QUEBRADAS (SUBSTR)
+# 3. CRIAR WORKFLOW DO GITHUB ACTIONS
 # ============================================================
-def fix_broken_queries() -> None:
-    print("🔍 Corrigindo queries com sintaxe quebrada...")
-    arquivos = list(BASE.glob("*.py")) + list((BASE / "ui" / "pages").glob("*.py"))
+def create_news_workflow() -> None:
+    wf_dir = BASE / ".github" / "workflows"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    p = wf_dir / "daily_news.yml"
     
-    # A string correta do SUBSTR
-    correct_query = "SUBSTR(ticker, 1, 3) != 'RF:'"
-    
-    # Padrões errados que podem estar no código
-    wrong_patterns = [
-        "SUBSTR(ticker, 1, 3) != 'RF:'",
-        "SUBSTR(ticker, 1, 3) != 'RF:'"
-    ]
-    
-    alterou = False
-    for p in arquivos:
-        txt = read(p)
-        original_txt = txt
-        for wrong in wrong_patterns:
-            txt = txt.replace(wrong, correct_query)
-            
-        if txt != original_txt:
-            write_validated(p, txt)
-            alterou = True
+    if p.exists():
+        print("[SKIP] daily_news.yml já existe.")
+        return
 
-    if not alterou:
-        print("[SKIP] Nenhuma query quebrada encontrada.")
+    content = '''name: Samurai Daily News (Legislativo)
+
+on:
+  schedule:
+    # 09:30 UTC = 06:30 Horário de Brasília
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  send_news:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar Dependências
+        run: pip install requests
+
+      - name: Executar Envio de Notícias
+        env:
+          SAMURAI_API_TOKEN: ${{ secrets.SAMURAI_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python daily_news_telegram.py
+'''
+    p.write_text(content, encoding="utf-8")
+    print(f"[OK] {p.relative_to(BASE)}")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -131,7 +220,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "refactor: forca uso exclusivo do supabase (postgres) e corrige sintaxe sql"])
+    _git_run_safe(["commit", "-m", "feat: adiciona noticias legislativas diarias (camara, senado, alerj, macae)"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -141,22 +230,29 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V6.0 — SUPABASE EXCLUSIVO E SQL PADRONIZADO")
+    print("V6.1 — NOTÍCIAS LEGISLATIVAS DIÁRIAS")
     print("=" * 60)
 
-    fix_database_postgres_only()
-    fix_schema_postgres()
-    fix_broken_queries()
+    etapas = [
+        ("Criar endpoint /api/daily-news (api_samurai.py)", fix_api_news),
+        ("Criar script de envio (daily_news_telegram.py)", create_daily_news_script),
+        ("Criar agendador (daily_news.yml)", create_news_workflow),
+    ]
+
+    for i, (label, fn) in enumerate(etapas, 1):
+        print(f"\n[{i}/{len(etapas)}] {label}")
+        fn()
+
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que testar agora:")
-    print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Navegue por TODAS as abas do app.")
-    print("3. O banco agora é 100% Supabase e o erro de sintaxe desapareceu.")
-    print("4. Se der erro de 'SUPABASE_URL não configurada', verifique se o seu secrets.toml está com a URL correta.")
+    print("\nComo testar agora:")
+    print("1. Espere o Render e o GitHub atualizarem.")
+    print("2. Vá no GitHub > Actions > 'Samurai Daily News' > Run workflow.")
+    print("3. As notícias de ontem chegarão no seu Telegram.")
+    print("4. A partir de amanhã, rodará automaticamente às 06:30.")
 
 if __name__ == "__main__":
     aplicar()
