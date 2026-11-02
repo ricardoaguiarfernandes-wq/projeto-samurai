@@ -1,9 +1,10 @@
 """
-criar_projeto_samurai.py — V3.6 (Fix IndexError no psycopg2 com LIKE '%%')
+criar_projeto_samurai.py — V3.7 (Chat Sequencial e Lista de Ações)
 
 ENTREGAS:
-1. FIX (core/database.py): Evita passar tuplas vazias () para o psycopg2 quando não há parâmetros, evitando crash com '%' em queries.
-2. FIX (04_Patrimonio.py): Garante que a tabela não seja recriada e o chat funcione perfeitamente.
+1. UI (04_Patrimonio.py): Implementa memória de contexto para o chat (mantém as últimas 10 mensagens).
+2. IA: Ajusta o prompt para permitir que a IA liste tickers específicos quando solicitado.
+3. IA: Mantém a continuidade da conversa sem perder o fio da meada.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -28,79 +29,63 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-# ============================================================
-# 1. FIX NO BANCO DE DADOS (Evitar IndexError do psycopg2)
-# ============================================================
-def fix_database_empty_params() -> None:
-    p = BASE / "core" / "database.py"
-    txt = read(p)
-
-    if "if params:" in txt:
-        print("[SKIP] database.py — correção de params vazios já aplicada.")
-        return
-
-    # 1.1 Corrigir a função execute
-    old_exec_1 = '''                        try:
-                            cur.execute(sql + " RETURNING id", params)'''
-    new_exec_1 = '''                        try:
-                            if params: cur.execute(sql + " RETURNING id", params)
-                            else: cur.execute(sql + " RETURNING id")'''
-
-    old_exec_2 = '''                            cur.execute(sql, params)
-                            conn.commit()
-                            return 0'''
-    new_exec_2 = '''                            if params: cur.execute(sql, params)
-                            else: cur.execute(sql)
-                            conn.commit()
-                            return 0'''
-
-    old_exec_3 = '''                    else:
-                        cur.execute(sql, params)
-                        conn.commit()'''
-    new_exec_3 = '''                    else:
-                        if params: cur.execute(sql, params)
-                        else: cur.execute(sql)
-                        conn.commit()'''
-
-    # 1.2 Corrigir a função query_all
-    old_q_all = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                cur.execute(sql, params)
-                return cur.fetchall()'''
-    new_q_all = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                if params: cur.execute(sql, params)
-                else: cur.execute(sql)
-                return cur.fetchall()'''
-
-    # 1.3 Corrigir a função query_one
-    old_q_one = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                cur.execute(sql, params)
-                return cur.fetchone()'''
-    new_q_one = '''                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                if params: cur.execute(sql, params)
-                else: cur.execute(sql)
-                return cur.fetchone()'''
-
-    txt = txt.replace(old_exec_1, new_exec_1)
-    txt = txt.replace(old_exec_2, new_exec_2)
-    txt = txt.replace(old_exec_3, new_exec_3)
-    txt = txt.replace(old_q_all, new_q_all)
-    txt = txt.replace(old_q_one, new_q_one)
-
-    write_validated(p, txt)
-
-# ============================================================
-# 2. LIMPEZA NO PATRIMÔNIO (Remover CREATE TABLE solto)
-# ============================================================
-def fix_patrimonio_cleanup() -> None:
+def fix_patrimonio_chat_sequential() -> None:
     p = BASE / "ui" / "pages" / "04_Patrimonio.py"
     txt = read(p)
 
-    alvo = 'execute("CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, rate TEXT)")\n'
-    if alvo in txt:
-        txt = txt.replace(alvo, "", 1)
+    if "HISTÓRICO DA CONVERSA:" in txt:
+        print("[SKIP] 04_Patrimonio.py — chat sequencial já implementado.")
+        return
+
+    old_prompt = '''        with st.chat_message("assistant"):
+            with st.spinner("Analisando fundamentos e carteira..."):
+                prompt_ia = f"""Atue como o Mentor Financeiro Samurai, um Analista Quantamental Sênior focado em valor, dividendos e proteção patrimonial.
+
+{ctx_carteira}
+
+O usuário perguntou: "{prompt_user}"
+
+Sua missão:
+1. Responda de forma direta, profissional e focada no longo prazo.
+2. Se ele perguntar sobre uma ação específica, analise os fundamentos (dividendos, resiliência, monopólio) e dê uma opinião CRAVADA (comprar, manter ou vender). NUNCA use "ou" para dar opções; escolha o melhor caminho.
+3. Se ele pedir para analisar a carteira, verifique a diversificação setorial e aponte pontos de melhoria.
+4. Lembre-se da filosofia Samurai: disciplina e consistência vencem a emoção do mercado. Não faça alucinações com cotações atuais; foque nos fundamentos.
+"""
+                resposta = ask_gemini(prompt_ia)
+                st.markdown(resposta)'''
+
+    new_prompt = '''        with st.chat_message("assistant"):
+            with st.spinner("Analisando fundamentos e carteira..."):
+                # Pega as últimas 10 mensagens para dar contexto (memória)
+                historico_recente = ""
+                for msg in st.session_state.fin_chat[-10:]:
+                    role = "Usuário" if msg["role"] == "user" else "Mentor"
+                    historico_recente += f"{role}: {msg['content']}\\n\\n"
+
+                prompt_ia = f"""Atue como o Mentor Financeiro Samurai, um Analista Quantamental Sênior focado em valor, dividendos e proteção patrimonial.
+
+{ctx_carteira}
+
+HISTÓRICO DA CONVERSA (Para você manter o contexto):
+{historico_recente}
+
+O usuário perguntou agora: "{prompt_user}"
+
+Sua missão:
+1. Responda de forma direta, profissional e focada no longo prazo, dando CONTINUIDADE à conversa anterior.
+2. **Atenção às Listas:** Se o usuário pedir uma lista de ações, sugestões ou disser "quero uma lista dos 1%", você DEVE listar explicitamente os tickers específicos que se encaixam na sua filosofia de valor (ex: TAEE11, BBAS3, CXSE3, SAPR11, ALUP11, etc.) e explicar o porquê de forma resumida. Não devolva a pergunta para o usuário.
+3. Se ele perguntar sobre uma ação específica, analise os fundamentos e dê uma opinião CRAVADA (comprar, manter ou vender). NUNCA use "ou" para dar opções; escolha o melhor caminho.
+4. Se ele pedir para analisar a carteira, verifique a diversificação setorial e aponte pontos de melhoria.
+5. Lembre-se da filosofia Samurai: disciplina e consistência vencem a emoção do mercado. Não faça alucinações com cotações atuais; foque nos fundamentos.
+"""
+                resposta = ask_gemini(prompt_ia)
+                st.markdown(resposta)'''
+
+    if old_prompt in txt:
+        txt = txt.replace(old_prompt, new_prompt, 1)
         write_validated(p, txt)
     else:
-        print("[SKIP] 04_Patrimonio.py — tabela já limpa.")
+        print("[AVISO] 04_Patrimonio.py — bloco do prompt do chat não encontrado.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -108,7 +93,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "fix(db): evita indexerror do psycopg2 com likes e params vazios"])
+    _git_run_safe(["commit", "-m", "feat: adiciona memoria de contexto (10 mensagens) ao chat financeiro"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -118,11 +103,10 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V3.6 — BLINDAGEM DO PSYCOPG2")
+    print("V3.7 — CHAT SEQUENCIAL E MEMÓRIA")
     print("=" * 60)
 
-    fix_database_empty_params()
-    fix_patrimonio_cleanup()
+    fix_patrimonio_chat_sequential()
     sync_git()
 
     print("\n" + "=" * 60)
@@ -130,8 +114,10 @@ def aplicar() -> None:
     print("=" * 60)
     print("\nO que testar agora:")
     print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Abra a aba 'Patrimônio'.")
-    print("3. O erro sumiu e o Chat com Analista já está disponível para uso.")
+    print("2. Na aba 'Patrimônio', inicie uma nova conversa no chat.")
+    print("3. Peça: 'Quero uma lista de 5 ações perenes da B3 para eu estudar'.")
+    print("4. Depois, pergunte: 'Dessas 5, qual você considera a mais segura para iniciantes?'")
+    print("5. A IA vai lembrar da lista anterior e responder corretamente!")
 
 if __name__ == "__main__":
     aplicar()

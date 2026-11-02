@@ -163,17 +163,27 @@ with tab_chat:
 
         with st.chat_message("assistant"):
             with st.spinner("Analisando fundamentos e carteira..."):
+                # Pega as últimas 10 mensagens para dar contexto (memória)
+                historico_recente = ""
+                for msg in st.session_state.fin_chat[-10:]:
+                    role = "Usuário" if msg["role"] == "user" else "Mentor"
+                    historico_recente += f"{role}: {msg['content']}\n\n"
+
                 prompt_ia = f"""Atue como o Mentor Financeiro Samurai, um Analista Quantamental Sênior focado em valor, dividendos e proteção patrimonial.
 
 {ctx_carteira}
 
-O usuário perguntou: "{prompt_user}"
+HISTÓRICO DA CONVERSA (Para você manter o contexto):
+{historico_recente}
+
+O usuário perguntou agora: "{prompt_user}"
 
 Sua missão:
-1. Responda de forma direta, profissional e focada no longo prazo.
-2. Se ele perguntar sobre uma ação específica, analise os fundamentos (dividendos, resiliência, monopólio) e dê uma opinião CRAVADA (comprar, manter ou vender). NUNCA use "ou" para dar opções; escolha o melhor caminho.
-3. Se ele pedir para analisar a carteira, verifique a diversificação setorial e aponte pontos de melhoria.
-4. Lembre-se da filosofia Samurai: disciplina e consistência vencem a emoção do mercado. Não faça alucinações com cotações atuais; foque nos fundamentos.
+1. Responda de forma direta, profissional e focada no longo prazo, dando CONTINUIDADE à conversa anterior.
+2. **Atenção às Listas:** Se o usuário pedir uma lista de ações, sugestões ou disser "quero uma lista dos 1%", você DEVE listar explicitamente os tickers específicos que se encaixam na sua filosofia de valor (ex: TAEE11, BBAS3, CXSE3, SAPR11, ALUP11, etc.) e explicar o porquê de forma resumida. Não devolva a pergunta para o usuário.
+3. Se ele perguntar sobre uma ação específica, analise os fundamentos e dê uma opinião CRAVADA (comprar, manter ou vender). NUNCA use "ou" para dar opções; escolha o melhor caminho.
+4. Se ele pedir para analisar a carteira, verifique a diversificação setorial e aponte pontos de melhoria.
+5. Lembre-se da filosofia Samurai: disciplina e consistência vencem a emoção do mercado. Não faça alucinações com cotações atuais; foque nos fundamentos.
 """
                 resposta = ask_gemini(prompt_ia)
                 st.markdown(resposta)
