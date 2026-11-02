@@ -1,5 +1,5 @@
 """
-aplicar_correcao_patrimonio.py — Força a IA a sugerir 3 ações perenes.
+aplicar_melhoria.py — Corrige cotações (fallback 5d) e adiciona diversificação setorial.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from datetime import date
 import yfinance as yf
+import pandas as pd
 
 _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
@@ -40,19 +41,25 @@ with tab_ia:
     texto_acoes = ""
     for a in acoes_db:
         ticker = a['ticker']
-        # Garante que o ticker tenha o .SA para buscar no Yahoo Finance
         ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
         
         try:
-            data = yf.Ticker(ticker_busca).history(period="1d")
+            # MUDANÇA AQUI: Busca 5 dias para garantir que pega o último fechamento válido (mesmo em fim de semana)
+            ticker_obj = yf.Ticker(ticker_busca)
+            data = ticker_obj.history(period="5d")
+            
+            if data.empty:
+                # Se falhar, tenta buscar o máximo histórico
+                data = ticker_obj.history(period="max")
+                
             if not data.empty:
-                preco_atual = data['Close'].iloc[-1]
+                preco_atual = float(data['Close'].iloc[-1])
                 lucro_pct = ((preco_atual / a['average_price']) - 1) * 100
                 texto_acoes += f"- {ticker}: {a['quantity']} cotas | Preço Médio: R$ {a['average_price']:.2f} | Cotação Atual: R$ {preco_atual:.2f} | Rentabilidade: {lucro_pct:.2f}%\\n"
             else:
-                texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Cotação indisponível)\\n"
-        except Exception:
-            texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Erro na API)\\n"
+                texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Cotação indisponível na API)\\n"
+        except Exception as e:
+            texto_acoes += f"- {ticker}: {a['quantity']} cotas (PM: R$ {a['average_price']:.2f} | Erro: {str(e)[:20]})\\n"
 
     texto_rf = "".join([f"- {r['name']}: R$ {r['amount']} (Taxa: {r['rate']})\\n" for r in rf_db])
 
@@ -65,7 +72,7 @@ with tab_ia:
         if st.form_submit_button("Gerar Plano de Alocação", use_container_width=True) and aporte > 0:
             with st.spinner("Analisando o mercado e buscando as melhores ações perenes..."):
                 
-                # Prompt reformulado para forçar a sugestão de 3 ações perenes
+                # Prompt atualizado com regra de diversificação
                 prompt = f\"\"\"Atue como um Consultor Financeiro (CFP) sênior.
 Tenho R$ {aporte:.2f} para investir este mês.
 Minha carteira atual de ações perenes (Buy and Hold, NUNCA vender):
@@ -74,10 +81,11 @@ Minha Renda Fixa:
 {texto_rf}
 
 Sua missão OBRIGATÓRIA:
-1. Analise se as minhas ações atuais estão em bom preço de compra (descontadas).
-2. Se as ações atuais NÃO estiverem descontadas, VOCÊ DEVE me apresentar EXATAMENTE 3 NOVAS AÇÕES PERENES (de setores como energia, saneamento, bancos, seguros, etc.) que estão atualmente com preço justo ou descontado.
-3. Para cada uma das 3 ações sugeridas, explique em um parágrafo: Por que ela é perene (monopólio, moat, dividendos consistentes) e por que o preço está atrativo hoje.
-4. Ao final, faça a divisão exata do aporte de R$ {aporte:.2f} entre Renda Fixa, Reserva de Oportunidade (para quedas futuras) e as Ações (seja nas atuais ou nas 3 novas sugeridas). Justifique a alocação centavo por centavo.
+1. Analise se as minhas ações atuais estão em bom preço de compra (descontadas) USANDO AS COTAÇÕES FORNECIDAS ACIMA. Se o dado não estiver disponível, diga isso explicitamente, mas não invente.
+2. Se as ações atuais NÃO estiverem descontadas, VOCÊ DEVE me apresentar EXATAMENTE 3 NOVAS AÇÕES PERENES.
+3. **REGRA DE OURO DA DIVERSIFICAÇÃO:** As 3 ações sugeridas DEVEM ser de setores DIFERENTES (ex: Energia, Saneamento, Bancos/Seguros, Papel e Celulose). O objetivo é proteger a carteira contra crises setoriais. NUNCA sugira 3 empresas do mesmo setor.
+4. Para cada uma das 3 ações sugeridas, explique em um parágrafo: Por que ela é perene (monopólio, moat, dividendos consistentes) e por que o preço está atrativo hoje.
+5. Ao final, faça a divisão exata do aporte de R$ {aporte:.2f} entre Renda Fixa, Reserva de Oportunidade (para quedas futuras) e as Ações (seja nas atuais ou nas 3 novas sugeridas). Justifique a alocação centavo por centavo.
 
 Mantenha um tom profissional, focado no longo prazo e na segurança do patrimônio.\"\"\"
                 
@@ -122,7 +130,7 @@ def _run(cmd):
 
 def aplicar():
     print("=" * 60)
-    print("⚔️  ATUALIZANDO IA FINANCEIRA (3 AÇÕES PERENES OBRIGATÓRIAS)")
+    print("⚔️  CORRIGINDO COTAÇÕES E ADICIONANDO DIVERSIFICAÇÃO")
     print("=" * 60)
     
     cam = "ui/pages/04_Patrimonio.py"
@@ -136,7 +144,7 @@ def aplicar():
 
     print("\n☁️  SINCRONIZANDO COM O GITHUB")
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Fix: Forca a IA a sugerir 3 acoes perenes na analise"])
+    _run(["git", "commit", "-m", "Feat: IA exige diversificacao setorial e corrige fallback de cotacoes"])
     _run(["git", "push", "origin", "main"])
     print("[OK] Push concluído. O Streamlit vai atualizar em instantes.")
     print("=" * 60)
