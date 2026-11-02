@@ -109,6 +109,12 @@ for h in habits:
             ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done
             """, (h["id"], today_iso, 1 if novo else 0),
         )
+        # Bugfix: Adicionar XP se o hábito foi concluído (e não estava concluído antes)
+        if novo and not h["done"]:
+            try:
+                execute("UPDATE user_stats SET xp = xp + 10 WHERE id = 1")
+            except Exception:
+                pass
         alterou = True
 if alterou: st.rerun()
 

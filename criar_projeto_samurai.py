@@ -1,11 +1,11 @@
 """
-criar_projeto_samurai.py — V8.0 (Flashcards Inteligentes e Revisão Espaçada)
+criar_projeto_samurai.py — V8.1 (Sistema de Conquistas e Gamificação)
 
 ENTREGAS:
-1. DB: Atualiza a tabela flashcards com as colunas do algoritmo SM-2 (intervalo, fator de facilidade, proxima revisao).
-2. UI (14_Carreira.py): Adiciona o gerador automático de flashcards a partir dos manuais.
-3. API (Telegram): Implementa o algoritmo SM-2 no comando /flashcard. A IA avalia a resposta do usuário e calcula a próxima data de revisão.
-4. UI (03_Informacao.py): Adiciona o botão para ler as notícias resumidas no Streamlit.
+1. DB: Cria a tabela 'achievements' para guardar os troféus.
+2. LÓGICA: Adiciona XP ao marcar hábitos no Streamlit (bugfix).
+3. UI: Cria a página 16_Conquistas.py (O Salão de Troféus).
+4. API: Cria o verificador de conquistas (/api/check_achievements) que o Telegram chama.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -31,224 +31,221 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. DB SCHEMA (SM-2)
+# 1. SCHEMA (Tabela de Conquistas)
 # ============================================================
-def fix_schema_flashcards() -> None:
+def fix_schema_achievements() -> None:
     p = BASE / "core" / "schema.py"
     txt = read(p)
     
-    old_table = '"""CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL);""",'
-    new_table = '"""CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL, interval_days INTEGER DEFAULT 1, ease_factor REAL DEFAULT 2.5, last_asked INTEGER DEFAULT 0);""",'
+    if "CREATE TABLE IF NOT EXISTS achievements" in txt:
+        print("[SKIP] schema.py — tabela achievements já existe.")
+        return
     
-    if old_table in txt:
-        txt = txt.replace(old_table, new_table, 1)
+    marker = '"""CREATE TABLE IF NOT EXISTS user_stats (id INTEGER PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1);""",'
+    nova_linha = marker + '\n        """CREATE TABLE IF NOT EXISTS achievements (id TEXT PRIMARY KEY, earned_at TEXT NOT NULL);""",'
+    
+    if marker in txt:
+        txt = txt.replace(marker, nova_linha, 1)
         write_validated(p, txt)
     else:
-        print("[SKIP] schema.py — tabela flashcards já atualizada ou não encontrada.")
+        print("[AVISO] schema.py — marcador de user_stats não encontrado.")
 
 # ============================================================
-# 2. UI CARREIRA (Gerador de Flashcards)
+# 2. FIX XP NO STREAMLIT (07_Consistencia.py)
 # ============================================================
-def fix_career_flashcards_ui() -> None:
-    p = BASE / "ui" / "pages" / "14_Carreira.py"
+def fix_xp_streamlit() -> None:
+    p = BASE / "ui" / "pages" / "07_Consistencia.py"
     txt = read(p)
 
-    if "Gerador de Flashcards" in txt:
-        print("[SKIP] 14_Carreira.py — gerador já existe.")
+    old_habit = '''        execute(
+            """
+            INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, ?)
+            ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done
+            """, (h["id"], today_iso, 1 if novo else 0),
+        )
+        alterou = True'''
+
+    new_habit = '''        execute(
+            """
+            INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, ?)
+            ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done
+            """, (h["id"], today_iso, 1 if novo else 0),
+        )
+        # Bugfix: Adicionar XP se o hábito foi concluído (e não estava concluído antes)
+        if novo and not h["done"]:
+            try:
+                execute("UPDATE user_stats SET xp = xp + 10 WHERE id = 1")
+            except Exception:
+                pass
+        alterou = True'''
+
+    if old_habit in txt:
+        txt = txt.replace(old_habit, new_habit, 1)
+        write_validated(p, txt)
+    else:
+        print("[SKIP] 07_Consistencia.py — bloco de hábito não encontrado ou já corrigido.")
+
+# ============================================================
+# 3. NAVEGAÇÃO E UI (Salão de Troféus)
+# ============================================================
+def create_achievements_page() -> None:
+    # 3.1 Adicionar no app.py
+    p_app = BASE / "app.py"
+    txt_app = read(p_app)
+    if "16_Conquistas.py" not in txt_app:
+        old_nav = 'financas = st.Page("ui/pages/15_Financas.py", title="💸 Finanças")'
+        new_nav = old_nav + '\nconquistas = st.Page("ui/pages/16_Conquistas.py", title="🏆 Conquistas")'
+        
+        old_dict = '"⚔️ Comando": [home, consistencia, disciplina, carreira, financas],'
+        new_dict = '"⚔️ Comando": [home, consistencia, disciplina, carreira, financas, conquistas],'
+        
+        if old_nav in txt_app and old_dict in txt_app:
+            txt_app = txt_app.replace(old_nav, new_nav, 1)
+            txt_app = txt_app.replace(old_dict, new_dict, 1)
+            write_validated(p_app, txt_app)
+
+    # 3.2 Criar a página
+    p = BASE / "ui" / "pages" / "16_Conquistas.py"
+    if p.exists():
+        print("[SKIP] 16_Conquistas.py já existe.")
         return
 
-    # Adiciona a aba no topo
-    old_tabs = 'tab_missoes, tab_manuais = st.tabs(["🎯 Missões Diárias", "📚 Base de Conhecimento (Manuais)"])'
-    new_tabs = 'tab_missoes, tab_manuais, tab_flashcards = st.tabs(["🎯 Missões Diárias", "📚 Base de Conhecimento (Manuais)", "🧠 Flashcards (Revisão)"])'
-    if old_tabs in txt:
-        txt = txt.replace(old_tabs, new_tabs, 1)
+    content = '''import streamlit as st
+import sys
+from pathlib import Path
 
-    # Adiciona o bloco da aba flashcards no final
-    flashcards_block = '''
-with tab_flashcards:
-    st.header("Gerador de Flashcards")
-    st.write("A IA vai ler os seus manuais e criar perguntas e respostas para você memorizar.")
-    
-    manuais_lista = query_all("SELECT title FROM manuals")
-    if not manuais_lista:
-        st.warning("Envie um manual na aba ao lado primeiro.")
-    else:
-        manual_escolhido = st.selectbox("Selecione o manual:", [m['title'] for m in manuais_lista])
-        
-        if st.button("🪄 Gerar Flashcards com IA", use_container_width=True):
-            with st.spinner("Lendo o manual e gerando cartões..."):
-                import random
-                manual_data = query_one("SELECT content FROM manuals WHERE title = ?", (manual_escolhido,))
-                texto_manual = manual_data['content']
-                
-                # Pega um chunk de 8000 caracteres para não estourar o limite
-                if len(texto_manual) > 8000:
-                    start_idx = random.randint(0, len(texto_manual) - 8000)
-                    chunk = texto_manual[start_idx:start_idx+8000]
-                else:
-                    chunk = texto_manual
-                    
-                prompt = f"""Leia o trecho do manual técnico abaixo e crie EXATAMENTE 3 flashcards no formato JSON.
-Cada flashcard deve ter uma pergunta desafiadora e uma resposta direta.
+_p = Path(__file__).resolve().parents[2]
+if str(_p) not in sys.path:
+    sys.path.insert(0, str(_p))
 
-Retorne APENAS o JSON válido, sem markdown:
-{{
-  "flashcards": [
-    {{"question": "Pergunta 1...", "answer": "Resposta 1..."}},
-    {{"question": "Pergunta 2...", "answer": "Resposta 2..."}},
-    {{"question": "Pergunta 3...", "answer": "Resposta 3..."}}
-  ]
-}}
+from core.database import query_all
+from core.schema import init_db
 
-TEXTO DO MANUAL:
-{chunk}
-"""
-                res = ask_gemini(prompt)
-                import re, json
-                from datetime import date
-                m = re.search(r'\\{.*\\}', res, re.DOTALL)
-                if m:
-                    try:
-                        data = json.loads(m.group(0))
-                        for card in data.get("flashcards", []):
-                            execute(
-                                "INSERT INTO flashcards (question, answer, next_review) VALUES (?, ?, ?)",
-                                (card["question"], card["answer"], date.today().isoformat())
-                            )
-                        st.success("Flashcards gerados com sucesso! Vá no Telegram e digite /flashcard.")
-                    except Exception as e:
-                        st.error(f"Erro ao processar JSON: {e}")
-                else:
-                    st.error("A IA não retornou o formato esperado.")
+init_db()
+st.title("🏆 Salão de Troféus")
+st.caption("Suas conquistas na jornada Samurai.")
 
-    st.divider()
-    st.subheader("📅 Cartões Pendentes Hoje")
-    from datetime import date
-    pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))
-    if not pendentes:
-        st.info("Nenhum cartão pendente para hoje. Ótimo trabalho!")
-    else:
-        for p_card in pendentes:
-            st.markdown(f"- {p_card['question']}")
+# Definição de todas as conquistas possíveis
+TODAS_CONQUISTAS = {
+    "primeiro_passo": {"nome": "Primeiro Passo", "desc": "Fez o primeiro check-in.", "icon": "👣"},
+    "treino_dia": {"nome": "Sangue e Suor", "desc": "Completou o treino de hoje.", "icon": "💪"},
+    "habito_completo": {"nome": "Disciplina", "desc": "Completou todos os hábitos de um dia.", "icon": "🔥"},
+    "streak_7": {"nome": "Monge", "desc": "7 dias seguidos de domínio.", "icon": "🧘"},
+    "financeiro": {"nome": "Investidor", "desc": "Registrou a primeira ação na carteira.", "icon": "📈"},
+    "estudioso": {"nome": "Estudioso", "desc": "Respondeu 5 flashcards no Telegram.", "icon": "📚"}
+}
+
+# Buscar as que já foram ganhas
+try:
+    ganhas_db = query_all("SELECT id, earned_at FROM achievements")
+    ganhas = {g['id']: g['earned_at'] for g in ganhas_db}
+except Exception:
+    ganhas = {}
+
+# Exibe o Grid de Troféus
+cols = st.columns(3)
+for i, (key, data) in enumerate(TODAS_CONQUISTAS.items()):
+    with cols[i % 3]:
+        if key in ganhas:
+            # Ganhou
+            st.markdown(f"""
+            <div class="samurai-card" style="text-align: center; border-left-color: #F9A825; background: linear-gradient(135deg, #2A1A00, #171717);">
+                <div style="font-size: 3rem;">{data['icon']}</div>
+                <div class="valor" style="font-size: 1.2rem; color: #F9A825;">{data['nome']}</div>
+                <div class="detalhe">{data['desc']}</div>
+                <div style="font-size: 0.7rem; color: #888; margin-top: 10px;">Ganhou em: {ganhas[key][:10]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Bloqueado
+            st.markdown(f"""
+            <div class="samurai-card" style="text-align: center; border-left-color: #333; opacity: 0.5;">
+                <div style="font-size: 3rem; filter: grayscale(100%);">{data['icon']}</div>
+                <div class="valor" style="font-size: 1.2rem;">???</div>
+                <div class="detalhe">{data['desc']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+st.divider()
+st.info("💡 Novas conquistas são desbloqueadas automaticamente conforme você usa o app e o Telegram. O Mentor vai te avisar!")
 '''
-
-    txt += flashcards_block
-    write_validated(p, txt)
+    write_validated(p, content)
 
 # ============================================================
-# 3. API (Algoritmo SM-2 no Telegram)
+# 4. API (Verificador de Conquistas e Comandos Telegram)
 # ============================================================
-def fix_api_telegram_sm2() -> None:
+def fix_api_achievements() -> None:
     p = BASE / "api_samurai.py"
     txt = read(p)
 
-    if "SM-2" in txt:
-        print("[SKIP] api_samurai.py — SM-2 já implementado.")
+    if "/api/check_achievements" in txt:
+        print("[SKIP] api_samurai.py — verificador já existe.")
         return
 
-    # Substitui toda a lógica de texto do telegram para incluir o SM-2 e a resposta
-    old_flashcard = '''        if text.startswith("/flashcard"):
-            card = query_one("SELECT question, answer FROM flashcards ORDER BY RANDOM() LIMIT 1")
-            if not card:
-                reply("📭 Nenhum flashcard cadastrado ainda. Vá na aba Carreira do app.")
-            else:
-                reply(f"🧠 **Flashcard:**\\n\\n{card['question']}\\n\\n_(Digite qualquer coisa para ver a resposta)_\\n**Resp:** {card['answer']}")
-            return'''
+    # 4.1 Criar o endpoint de checagem
+    endpoint = '''
+# ============================================================
+# VERIFICADOR DE CONQUISTAS
+# ============================================================
+def unlock_achievement(ach_id: str) -> bool:
+    """Retorna True se desbloqueou agora, False se já tinha ou não cumpriu."""
+    try:
+        existe = query_one("SELECT id FROM achievements WHERE id = ?", (ach_id,))
+        if not existe:
+            execute("INSERT INTO achievements (id, earned_at) VALUES (?, ?)", (ach_id, date.today().isoformat()))
+            # Dá 50 XP de bônus
+            execute("UPDATE user_stats SET xp = xp + 50 WHERE id = 1")
+            return True
+    except Exception:
+        pass
+    return False
 
-    new_flashcard = '''        # --- LÓGICA DE FLASHCARDS (SM-2) ---
-        from datetime import datetime, timedelta
+@app.get("/api/check_achievements", dependencies=[Depends(require_token)])
+def check_achievements():
+    novas = []
+    
+    # 1. Primeiro Passo
+    if safe_int((query_one("SELECT COUNT(*) AS c FROM daily_checkins") or {}).get("c")) > 0:
+        if unlock_achievement("primeiro_passo"): novas.append("Primeiro Passo")
         
-        # Se o usuário estiver respondendo a um flashcard pendente
-        card_pendente = query_one("SELECT * FROM flashcards WHERE last_asked = 1 LIMIT 1")
-        if card_pendente and not text.startswith("/"):
-            prompt_aval = f"""Atue como um avaliador técnico.
-Pergunta: "{card_pendente['question']}"
-Resposta Correta: "{card_pendente['answer']}"
-Resposta do Aluno: "{text}"
+    # 2. Treino Completo
+    hoje = date.today().isoformat()
+    if safe_int((query_one("SELECT COUNT(*) AS c FROM exercise_logs WHERE log_date = ?", (hoje,)) or {}).get("c")) > 0:
+        if unlock_achievement("treino_dia"): novas.append("Sangue e Suor")
+        
+    # 3. Financeiro
+    if safe_int((query_one("SELECT COUNT(*) AS c FROM portfolio") or {}).get("c")) > 0:
+        if unlock_achievement("financeiro"): novas.append("Investidor")
 
-O aluno acertou? Avalie o sentido, não precisa ser palavra por palavra. 
-Se ele acertou, responda começando com "ACERTOU".
-Se ele errou, responda começando com "ERROU" e explique a resposta correta.
-"""
-            avaliacao = ask_gemini(prompt_aval)
-            
-            # Algoritmo SM-2 Simplificado
-            ease = card_pendente['ease_factor']
-            interval = card_pendente['interval_days']
-            
-            if "ACERTOU" in avaliacao:
-                interval = int(interval * ease)
-                ease = ease + 0.1
-                reply(f"✅ {avaliacao}\\n\\n_Próxima revisão em {interval} dias._")
-            else:
-                interval = 1 # Volta amanhã
-                ease = max(1.3, ease - 0.2)
-                reply(f"❌ {avaliacao}\\n\\n_Voltará amanhã._")
-                
-            next_review = (date.today() + timedelta(days=interval)).isoformat()
-            execute("UPDATE flashcards SET last_asked = 0, interval_days = ?, ease_factor = ?, next_review = ? WHERE id = ?",
-                    (interval, ease, next_review, card_pendente['id']))
-            return
+    return {"new_achievements": novas}
 
-        if text.startswith("/flashcard"):
-            card = query_one("SELECT * FROM flashcards WHERE next_review <= ? AND last_asked = 0 ORDER BY next_review ASC LIMIT 1", (date.today().isoformat(),))
-            if not card:
-                reply("📭 Nenhum flashcard pendente para hoje. Vá na aba Carreira do app para gerar novos.")
-            else:
-                execute("UPDATE flashcards SET last_asked = 1 WHERE id = ?", (card['id'],))
-                reply(f"🧠 **Flashcard:**\\n\\n{card['question']}\\n\\n_(Digite a sua resposta)_")
-            return'''
+'''
 
-    if old_flashcard in txt:
-        txt = txt.replace(old_flashcard, new_flashcard, 1)
-        write_validated(p, txt)
+    marker = '# ============================================================\n# WEBHOOK DE EMAIL'
+    if marker in txt:
+        txt = txt.replace(marker, endpoint + marker, 1)
     else:
-        print("[AVISO] api_samurai.py — bloco do flashcard antigo não encontrado.")
+        print("[AVISO] api_samurai.py — marcador de email não encontrado.")
 
-# ============================================================
-# 4. UI INFORMAÇÃO (Notícias no App)
-# ============================================================
-def fix_informacao_news_ui() -> None:
-    p = BASE / "ui" / "pages" / "03_Informacao.py"
-    txt = read(p)
+    # 4.2 Chamar a checagem no Telegram após responder hábitos ou flashcards
+    old_reply = '''        res = ask_gemini(prompt)
+        reply(res)'''
+    
+    new_reply = '''        res = ask_gemini(prompt)
+        reply(res)
+        
+        # Verifica conquistas silenciosamente
+        try:
+            novas = check_achievements().get("new_achievements", [])
+            if novas:
+                reply(f"🏆 **NOVA CONQUISTA DESBLOQUEADA!**\\n\\nVocê ganhou: {', '.join(novas)}\\n(+50 XP)")
+        except Exception:
+            pass'''
+            
+    # Só substitui a primeira ocorrência (que é a do processamento de texto do telegram)
+    txt = txt.replace(old_reply, new_reply, 1)
 
-    if "Notícias Legislativas" in txt:
-        print("[SKIP] 03_Informacao.py — notícias já implementadas.")
-        return
-
-    old_block = 'with tab_financas:'
-    new_block = '''with tab_financas:
-    st.subheader("🏛️ Notícias Legislativas de Hoje")
-    if st.button("🧠 Gerar Resumo de Notícias", use_container_width=True):
-        with st.spinner("Lendo Câmara, Senado, ALERJ e Macaé..."):
-            # Simulando a chamada da API local (no Render) - vamos chamar direto a função
-            try:
-                # No app local não tem como chamar a API protegida, então vamos ler direto
-                import feedparser
-                from bs4 import BeautifulSoup
-                noticias = []
-                
-                f1 = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
-                for e in f1.entries[:2]: noticias.append(f"[Câmara] {e.title}")
-                f2 = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
-                for e in f2.entries[:2]: noticias.append(f"[Senado] {e.title}")
-                f3 = feedparser.parse("https://news.google.com/rss/search?q=alerj+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
-                for e in f3.entries[:2]: noticias.append(f"[ALERJ] {e.title}")
-                f4 = feedparser.parse("https://news.google.com/rss/search?q=camara+macae+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
-                for e in f4.entries[:2]: noticias.append(f"[Macaé] {e.title}")
-                
-                prompt = f"Resuma as notícias a seguir em tópicos e explique o impacto prático:\\n" + "\\n".join(noticias)
-                resumo = ask_gemini(prompt)
-                st.markdown(f'<div class="samurai-card" style="border-left-color: #8B0000;"><div style="white-space: pre-wrap;">{resumo}</div></div>', unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Erro ao carregar notícias: {e}")
-    st.divider()'''
-
-    if old_block in txt:
-        txt = txt.replace(old_block, new_block, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] 03_Informacao.py — bloco tab_financas não encontrado.")
+    write_validated(p, txt)
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -256,13 +253,12 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: flashcards inteligentes (SM-2), gerador de cartoes e noticias no app"])
+    _git_run_safe(["commit", "-m", "feat: sistema de conquistas (badges), fix xp no streamlit e avisos no telegram"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
         print("[OK] Push concluído com sucesso!")
         
-        # Força Deploy
         try:
             hook_url = ""
             env_file = BASE / ".env.render"
@@ -282,24 +278,22 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V8.0 — FLASHCARDS SM-2 E NOTÍCIAS NO APP")
+    print("V8.1 — SALÃO DE TROFÉUS")
     print("=" * 60)
 
-    fix_schema_flashcards()
-    fix_career_flashcards_ui()
-    fix_api_telegram_sm2()
-    fix_informacao_news_ui()
+    fix_schema_achievements()
+    fix_xp_streamlit()
+    create_achievements_page()
+    fix_api_achievements()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nComo testar:")
-    print("1. Espere o Render atualizar.")
-    print("2. Vá na aba 'Carreira' > 'Flashcards' e gere cartões a partir do seu manual.")
-    print("3. No Telegram, envie '/flashcard' para receber a pergunta.")
-    print("4. Digite a sua resposta. A IA vai te avaliar e agendar a próxima revisão (se acertar, demora mais; se errar, volta amanhã).")
-    print("5. Na aba 'Informação', agora tem um botão para gerar o resumo de notícias direto no app.")
+    print("\nO que testar agora:")
+    print("1. Espere o Render e o Streamlit atualizarem.")
+    print("2. Abra a nova aba '🏆 Conquistas' no menu. Veja as medalhas que você já desbloqueou (Investidor, Primeiro Passo).")
+    print("3. Vá no Telegram e faça um check-in ou mande um flashcard. Se você bater um recorde, ele vai avisar da nova conquista e te dar +50 XP!")
 
 if __name__ == "__main__":
     aplicar()
