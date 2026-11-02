@@ -1,11 +1,10 @@
 """
-criar_projeto_samurai.py — V8.1 (Sistema de Conquistas e Gamificação)
+criar_projeto_samurai.py — V8.2 (Controle de Orçamento e Alertas)
 
 ENTREGAS:
-1. DB: Cria a tabela 'achievements' para guardar os troféus.
-2. LÓGICA: Adiciona XP ao marcar hábitos no Streamlit (bugfix).
-3. UI: Cria a página 16_Conquistas.py (O Salão de Troféus).
-4. API: Cria o verificador de conquistas (/api/check_achievements) que o Telegram chama.
+1. DB: Cria a tabela 'budgets' para guardar os limites mensais.
+2. UI (15_Financas.py): Adiciona a configuração de teto de gastos e barras de progresso.
+3. API (api_samurai.py): A rota de receber foto no Telegram agora checa o orçamento e avisa se estourou.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -31,221 +30,130 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. SCHEMA (Tabela de Conquistas)
+# 1. SCHEMA (Tabela de Orçamento)
 # ============================================================
-def fix_schema_achievements() -> None:
+def fix_schema_budgets() -> None:
     p = BASE / "core" / "schema.py"
     txt = read(p)
     
-    if "CREATE TABLE IF NOT EXISTS achievements" in txt:
-        print("[SKIP] schema.py — tabela achievements já existe.")
+    if "CREATE TABLE IF NOT EXISTS budgets" in txt:
+        print("[SKIP] schema.py — tabela budgets já existe.")
         return
     
-    marker = '"""CREATE TABLE IF NOT EXISTS user_stats (id INTEGER PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1);""",'
-    nova_linha = marker + '\n        """CREATE TABLE IF NOT EXISTS achievements (id TEXT PRIMARY KEY, earned_at TEXT NOT NULL);""",'
+    marker = '"""CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, expense_date TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, category TEXT, notes TEXT);""",'
+    nova_linha = marker + '\n        """CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL);""",'
     
     if marker in txt:
         txt = txt.replace(marker, nova_linha, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] schema.py — marcador de user_stats não encontrado.")
+        print("[AVISO] schema.py — marcador de expenses não encontrado.")
 
 # ============================================================
-# 2. FIX XP NO STREAMLIT (07_Consistencia.py)
+# 2. UI FINANÇAS (Configuração de Orçamento e Progresso)
 # ============================================================
-def fix_xp_streamlit() -> None:
-    p = BASE / "ui" / "pages" / "07_Consistencia.py"
+def fix_financas_budget_ui() -> None:
+    p = BASE / "ui" / "pages" / "15_Financas.py"
     txt = read(p)
 
-    old_habit = '''        execute(
-            """
-            INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, ?)
-            ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done
-            """, (h["id"], today_iso, 1 if novo else 0),
-        )
-        alterou = True'''
-
-    new_habit = '''        execute(
-            """
-            INSERT INTO habit_logs (habit_id, log_date, done) VALUES (?, ?, ?)
-            ON CONFLICT(habit_id, log_date) DO UPDATE SET done = excluded.done
-            """, (h["id"], today_iso, 1 if novo else 0),
-        )
-        # Bugfix: Adicionar XP se o hábito foi concluído (e não estava concluído antes)
-        if novo and not h["done"]:
-            try:
-                execute("UPDATE user_stats SET xp = xp + 10 WHERE id = 1")
-            except Exception:
-                pass
-        alterou = True'''
-
-    if old_habit in txt:
-        txt = txt.replace(old_habit, new_habit, 1)
-        write_validated(p, txt)
-    else:
-        print("[SKIP] 07_Consistencia.py — bloco de hábito não encontrado ou já corrigido.")
-
-# ============================================================
-# 3. NAVEGAÇÃO E UI (Salão de Troféus)
-# ============================================================
-def create_achievements_page() -> None:
-    # 3.1 Adicionar no app.py
-    p_app = BASE / "app.py"
-    txt_app = read(p_app)
-    if "16_Conquistas.py" not in txt_app:
-        old_nav = 'financas = st.Page("ui/pages/15_Financas.py", title="💸 Finanças")'
-        new_nav = old_nav + '\nconquistas = st.Page("ui/pages/16_Conquistas.py", title="🏆 Conquistas")'
-        
-        old_dict = '"⚔️ Comando": [home, consistencia, disciplina, carreira, financas],'
-        new_dict = '"⚔️ Comando": [home, consistencia, disciplina, carreira, financas, conquistas],'
-        
-        if old_nav in txt_app and old_dict in txt_app:
-            txt_app = txt_app.replace(old_nav, new_nav, 1)
-            txt_app = txt_app.replace(old_dict, new_dict, 1)
-            write_validated(p_app, txt_app)
-
-    # 3.2 Criar a página
-    p = BASE / "ui" / "pages" / "16_Conquistas.py"
-    if p.exists():
-        print("[SKIP] 16_Conquistas.py já existe.")
+    if "Configurar Orçamento" in txt:
+        print("[SKIP] 15_Financas.py — orçamento já implementado.")
         return
 
-    content = '''import streamlit as st
-import sys
-from pathlib import Path
+    old_chart = '''# --- GRÁFICO DE GASTOS ---
+st.subheader("🍕 Para onde o dinheiro está indo?")'''
 
-_p = Path(__file__).resolve().parents[2]
-if str(_p) not in sys.path:
-    sys.path.insert(0, str(_p))
-
-from core.database import query_all
-from core.schema import init_db
-
-init_db()
-st.title("🏆 Salão de Troféus")
-st.caption("Suas conquistas na jornada Samurai.")
-
-# Definição de todas as conquistas possíveis
-TODAS_CONQUISTAS = {
-    "primeiro_passo": {"nome": "Primeiro Passo", "desc": "Fez o primeiro check-in.", "icon": "👣"},
-    "treino_dia": {"nome": "Sangue e Suor", "desc": "Completou o treino de hoje.", "icon": "💪"},
-    "habito_completo": {"nome": "Disciplina", "desc": "Completou todos os hábitos de um dia.", "icon": "🔥"},
-    "streak_7": {"nome": "Monge", "desc": "7 dias seguidos de domínio.", "icon": "🧘"},
-    "financeiro": {"nome": "Investidor", "desc": "Registrou a primeira ação na carteira.", "icon": "📈"},
-    "estudioso": {"nome": "Estudioso", "desc": "Respondeu 5 flashcards no Telegram.", "icon": "📚"}
-}
-
-# Buscar as que já foram ganhas
-try:
-    ganhas_db = query_all("SELECT id, earned_at FROM achievements")
-    ganhas = {g['id']: g['earned_at'] for g in ganhas_db}
-except Exception:
-    ganhas = {}
-
-# Exibe o Grid de Troféus
-cols = st.columns(3)
-for i, (key, data) in enumerate(TODAS_CONQUISTAS.items()):
-    with cols[i % 3]:
-        if key in ganhas:
-            # Ganhou
-            st.markdown(f"""
-            <div class="samurai-card" style="text-align: center; border-left-color: #F9A825; background: linear-gradient(135deg, #2A1A00, #171717);">
-                <div style="font-size: 3rem;">{data['icon']}</div>
-                <div class="valor" style="font-size: 1.2rem; color: #F9A825;">{data['nome']}</div>
-                <div class="detalhe">{data['desc']}</div>
-                <div style="font-size: 0.7rem; color: #888; margin-top: 10px;">Ganhou em: {ganhas[key][:10]}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            # Bloqueado
-            st.markdown(f"""
-            <div class="samurai-card" style="text-align: center; border-left-color: #333; opacity: 0.5;">
-                <div style="font-size: 3rem; filter: grayscale(100%);">{data['icon']}</div>
-                <div class="valor" style="font-size: 1.2rem;">???</div>
-                <div class="detalhe">{data['desc']}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    new_ui = '''# --- CONFIGURAÇÃO DE ORÇAMENTO ---
+with st.expander("⚙️ Configurar Orçamento Mensal (Teto de Gastos)"):
+    st.write("Defina o limite para cada categoria. O Mentor vai te avisar se você estourar.")
+    with st.form("form_budget"):
+        c1, c2 = st.columns(2)
+        cat = c1.selectbox("Categoria", ["Alimentação", "Transporte", "Lazer", "Saúde", "Outros"])
+        val = c2.number_input("Limite Mensal (R$)", min_value=0.0, step=100.0)
+        if st.form_submit_button("Salvar Limite"):
+            execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET limit_amount=excluded.limit_amount", (cat, val))
+            st.success(f"Limite de R$ {val:.2f} salvo para {cat}.")
+            st.rerun()
 
 st.divider()
-st.info("💡 Novas conquistas são desbloqueadas automaticamente conforme você usa o app e o Telegram. O Mentor vai te avisar!")
-'''
-    write_validated(p, content)
+
+# --- BARRAS DE PROGRESSO DO ORÇAMENTO ---
+st.subheader("📊 Orçamento em Tempo Real")
+budgets = query_all("SELECT * FROM budgets")
+if budgets:
+    for b in budgets:
+        # Pega o total gasto nesta categoria no mês atual
+        gasto_cat = sum([g['amount'] for g in gastos_mes if g['category'] == b['category']])
+        perc = (gasto_cat / b['limit_amount']) * 100 if b['limit_amount'] > 0 else 0
+        
+        cor = "#4CAF50" if perc < 70 else ("#F9A825" if perc < 90 else "#F44336")
+        
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+            <span><b>{b['category']}</b></span>
+            <span>R$ {gasto_cat:.2f} / R$ {b['limit_amount']:.2f} ({perc:.0f}%)</span>
+        </div>
+        """, unsafe_allow_html=True)
+        st.progress(min(perc / 100, 1.0))
+        if perc >= 90:
+            st.caption(f"⚠️ Cuidado! Você já usou {perc:.0f}% do seu limite em {b['category']}.")
+
+st.divider()
+
+# --- GRÁFICO DE GASTOS ---
+st.subheader("🍕 Para onde o dinheiro está indo?")'''
+
+    if old_chart in txt:
+        txt = txt.replace(old_chart, new_ui, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] 15_Financas.py — bloco de gráfico não encontrado.")
 
 # ============================================================
-# 4. API (Verificador de Conquistas e Comandos Telegram)
+# 3. API (Alerta de Orçamento no Telegram)
 # ============================================================
-def fix_api_achievements() -> None:
+def fix_api_budget_alert() -> None:
     p = BASE / "api_samurai.py"
     txt = read(p)
 
-    if "/api/check_achievements" in txt:
-        print("[SKIP] api_samurai.py — verificador já existe.")
+    if "Orçamento estourado" in txt:
+        print("[SKIP] api_samurai.py — alerta de orçamento já existe.")
         return
 
-    # 4.1 Criar o endpoint de checagem
-    endpoint = '''
-# ============================================================
-# VERIFICADOR DE CONQUISTAS
-# ============================================================
-def unlock_achievement(ach_id: str) -> bool:
-    """Retorna True se desbloqueou agora, False se já tinha ou não cumpriu."""
-    try:
-        existe = query_one("SELECT id FROM achievements WHERE id = ?", (ach_id,))
-        if not existe:
-            execute("INSERT INTO achievements (id, earned_at) VALUES (?, ?)", (ach_id, date.today().isoformat()))
-            # Dá 50 XP de bônus
-            execute("UPDATE user_stats SET xp = xp + 50 WHERE id = 1")
-            return True
-    except Exception:
-        pass
-    return False
+    old_telegram_photo = '''                        msg = f"✅ Gasto registrado: *{data.get('description')}*\\n"
+                        msg += f"Valor: R$ {data.get('amount'):.2f}\\n"
+                        msg += f"Categoria: {data.get('category')}"
+                        reply(msg)'''
 
-@app.get("/api/check_achievements", dependencies=[Depends(require_token)])
-def check_achievements():
-    novas = []
-    
-    # 1. Primeiro Passo
-    if safe_int((query_one("SELECT COUNT(*) AS c FROM daily_checkins") or {}).get("c")) > 0:
-        if unlock_achievement("primeiro_passo"): novas.append("Primeiro Passo")
-        
-    # 2. Treino Completo
-    hoje = date.today().isoformat()
-    if safe_int((query_one("SELECT COUNT(*) AS c FROM exercise_logs WHERE log_date = ?", (hoje,)) or {}).get("c")) > 0:
-        if unlock_achievement("treino_dia"): novas.append("Sangue e Suor")
-        
-    # 3. Financeiro
-    if safe_int((query_one("SELECT COUNT(*) AS c FROM portfolio") or {}).get("c")) > 0:
-        if unlock_achievement("financeiro"): novas.append("Investidor")
+    new_telegram_photo = '''                        msg = f"✅ Gasto registrado: *{data.get('description')}*\\n"
+                        msg += f"Valor: R$ {data.get('amount'):.2f}\\n"
+                        msg += f"Categoria: {data.get('category')}\\n"
+                        
+                        # Checagem de Orçamento
+                        try:
+                            cat = data.get('category', 'Outros')
+                            budget = query_one("SELECT limit_amount FROM budgets WHERE category = ?", (cat,))
+                            if budget:
+                                # Soma os gastos do mês atual nesta categoria
+                                mes_atual = date.today().strftime("%Y-%m")
+                                gastos_cat = query_all("SELECT amount FROM expenses WHERE category = ? AND expense_date LIKE ?", (cat, f"{mes_atual}%"))
+                                total_gasto = sum(float(g['amount']) for g in gastos_cat) if gastos_cat else 0.0
+                                
+                                perc = (total_gasto / float(budget['limit_amount'])) * 100
+                                if perc >= 100:
+                                    msg += f"\\n🚨 **ORÇAMENTO ESTOURADO!** Você já gastou {perc:.0f}% do teto de {cat}."
+                                elif perc >= 80:
+                                    msg += f"\\n⚠️ **Atenção:** Você já usou {perc:.0f}% do seu orçamento de {cat}."
+                        except Exception as e:
+                            print(f"Erro ao checar orçamento: {e}")
+                            
+                        reply(msg)'''
 
-    return {"new_achievements": novas}
-
-'''
-
-    marker = '# ============================================================\n# WEBHOOK DE EMAIL'
-    if marker in txt:
-        txt = txt.replace(marker, endpoint + marker, 1)
+    if old_telegram_photo in txt:
+        txt = txt.replace(old_telegram_photo, new_telegram_photo, 1)
+        write_validated(p, txt)
     else:
-        print("[AVISO] api_samurai.py — marcador de email não encontrado.")
-
-    # 4.2 Chamar a checagem no Telegram após responder hábitos ou flashcards
-    old_reply = '''        res = ask_gemini(prompt)
-        reply(res)'''
-    
-    new_reply = '''        res = ask_gemini(prompt)
-        reply(res)
-        
-        # Verifica conquistas silenciosamente
-        try:
-            novas = check_achievements().get("new_achievements", [])
-            if novas:
-                reply(f"🏆 **NOVA CONQUISTA DESBLOQUEADA!**\\n\\nVocê ganhou: {', '.join(novas)}\\n(+50 XP)")
-        except Exception:
-            pass'''
-            
-    # Só substitui a primeira ocorrência (que é a do processamento de texto do telegram)
-    txt = txt.replace(old_reply, new_reply, 1)
-
-    write_validated(p, txt)
+        print("[AVISO] api_samurai.py — bloco de resposta de foto não encontrado.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -253,7 +161,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: sistema de conquistas (badges), fix xp no streamlit e avisos no telegram"])
+    _git_run_safe(["commit", "-m", "feat: controle de orcamento mensal e alertas proativos no telegram"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -278,22 +186,23 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V8.1 — SALÃO DE TROFÉUS")
+    print("V8.2 — CONTROLE DE ORÇAMENTO E ALERTAS")
     print("=" * 60)
 
-    fix_schema_achievements()
-    fix_xp_streamlit()
-    create_achievements_page()
-    fix_api_achievements()
+    fix_schema_budgets()
+    fix_financas_budget_ui()
+    fix_api_budget_alert()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
     print("\nO que testar agora:")
-    print("1. Espere o Render e o Streamlit atualizarem.")
-    print("2. Abra a nova aba '🏆 Conquistas' no menu. Veja as medalhas que você já desbloqueou (Investidor, Primeiro Passo).")
-    print("3. Vá no Telegram e faça um check-in ou mande um flashcard. Se você bater um recorde, ele vai avisar da nova conquista e te dar +50 XP!")
+    print("1. Espere o Render e o Streamlit atualizarem (1-2 min).")
+    print("2. Vá na aba '💸 Finanças' e clique em '⚙️ Configurar Orçamento Mensal'.")
+    print("3. Defina um teto baixo para 'Lazer' (ex: R$ 50) só para testar.")
+    print("4. Vá no Telegram e envie uma foto de comprovante com categoria 'Lazer' e valor '60'.")
+    print("5. Veja a mágica acontecer: o bot vai te avisar na hora que você estourou o orçamento!")
 
 if __name__ == "__main__":
     aplicar()

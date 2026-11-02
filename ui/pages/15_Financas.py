@@ -40,6 +40,43 @@ with col3:
 
 st.divider()
 
+# --- CONFIGURAÇÃO DE ORÇAMENTO ---
+with st.expander("⚙️ Configurar Orçamento Mensal (Teto de Gastos)"):
+    st.write("Defina o limite para cada categoria. O Mentor vai te avisar se você estourar.")
+    with st.form("form_budget"):
+        c1, c2 = st.columns(2)
+        cat = c1.selectbox("Categoria", ["Alimentação", "Transporte", "Lazer", "Saúde", "Outros"])
+        val = c2.number_input("Limite Mensal (R$)", min_value=0.0, step=100.0)
+        if st.form_submit_button("Salvar Limite"):
+            execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET limit_amount=excluded.limit_amount", (cat, val))
+            st.success(f"Limite de R$ {val:.2f} salvo para {cat}.")
+            st.rerun()
+
+st.divider()
+
+# --- BARRAS DE PROGRESSO DO ORÇAMENTO ---
+st.subheader("📊 Orçamento em Tempo Real")
+budgets = query_all("SELECT * FROM budgets")
+if budgets:
+    for b in budgets:
+        # Pega o total gasto nesta categoria no mês atual
+        gasto_cat = sum([g['amount'] for g in gastos_mes if g['category'] == b['category']])
+        perc = (gasto_cat / b['limit_amount']) * 100 if b['limit_amount'] > 0 else 0
+        
+        cor = "#4CAF50" if perc < 70 else ("#F9A825" if perc < 90 else "#F44336")
+        
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+            <span><b>{b['category']}</b></span>
+            <span>R$ {gasto_cat:.2f} / R$ {b['limit_amount']:.2f} ({perc:.0f}%)</span>
+        </div>
+        """, unsafe_allow_html=True)
+        st.progress(min(perc / 100, 1.0))
+        if perc >= 90:
+            st.caption(f"⚠️ Cuidado! Você já usou {perc:.0f}% do seu limite em {b['category']}.")
+
+st.divider()
+
 # --- GRÁFICO DE GASTOS ---
 st.subheader("🍕 Para onde o dinheiro está indo?")
 if not gastos:
