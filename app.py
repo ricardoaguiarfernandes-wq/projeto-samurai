@@ -16,7 +16,12 @@ import streamlit as st
 from core.schema import init_db
 from services.auth import check_password
 
-init_db()
+# OTIMIZAÇÃO: Roda o init_db apenas uma vez por sessão, não a cada clique
+@st.cache_resource
+def setup_database():
+    init_db()
+
+setup_database()
 
 # Bloqueia o app se a senha não estiver correta
 if not check_password():

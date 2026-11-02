@@ -75,6 +75,8 @@ for i in range(365):
     dias.append({"data": dia_atual, "count": qtd})
 
 df_heatmap = pd.DataFrame(dias)
+# FIX: Força a conversão para datetime antes de usar .dt
+df_heatmap["data"] = pd.to_datetime(df_heatmap["data"])
 df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week
 df_heatmap["dia_semana"] = df_heatmap["data"].dt.weekday
 df_heatmap["mes"] = df_heatmap["data"].dt.month

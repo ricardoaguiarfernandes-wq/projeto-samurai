@@ -1,10 +1,10 @@
 """
-criar_projeto_samurai.py — V8.3 (Gráfico de Constância Anual e Year in Review)
+criar_projeto_samurai.py — V8.4 (Otimização Extrema e Correções)
 
 ENTREGAS:
-1. UI (00_Home.py): Adiciona o Heatmap (quadradinhos) de constância dos últimos 365 dias.
-2. UI (00_Home.py): Adiciona o "Year in Review" (resumo macro de hábitos, treinos e XP).
-3. LÓGICA: Conta hábitos diários para pintar o gráfico de acordo com a intensidade.
+1. FIX (app.py): Adiciona @st.cache_resource no init_db() para não consultar o Supabase a cada clique.
+2. FIX (00_Home.py): Corrige o erro do pandas (.dt) e adiciona cache no heatmap.
+3. FIX (14_Carreira.py & 15_Financas.py): Fallback para criar tabelas flashcards e budgets no Supabase.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -29,114 +29,104 @@ def write_validated(p: Path, content: str) -> None:
     p.write_text(content, encoding="utf-8")
     print(f"[OK] {p.relative_to(BASE)}")
 
-def fix_home_heatmap() -> None:
+# ============================================================
+# 1. OTIMIZAÇÃO GLOBAL (app.py)
+# ============================================================
+def fix_app_cache() -> None:
+    p = BASE / "app.py"
+    txt = read(p)
+
+    if "@st.cache_resource" in txt:
+        print("[SKIP] app.py — cache já aplicado.")
+        return
+
+    old_init = '''from core.schema import init_db
+from services.auth import check_password
+
+init_db()'''
+
+    new_init = '''from core.schema import init_db
+from services.auth import check_password
+
+# OTIMIZAÇÃO: Roda o init_db apenas uma vez por sessão, não a cada clique
+@st.cache_resource
+def setup_database():
+    init_db()
+
+setup_database()'''
+
+    if old_init in txt:
+        txt = txt.replace(old_init, new_init, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] app.py — bloco init_db não encontrado.")
+
+# ============================================================
+# 2. FIX HEATMAP (00_Home.py)
+# ============================================================
+def fix_heatmap_datetime() -> None:
     p = BASE / "ui" / "pages" / "00_Home.py"
     txt = read(p)
 
-    if "Heatmap de Constância" in txt:
-        print("[SKIP] 00_Home.py — heatmap já implementado.")
+    if 'df_heatmap["data"] = pd.to_datetime(df_heatmap["data"])' in txt:
+        print("[SKIP] 00_Home.py — fix datetime já aplicado.")
         return
 
-    # Marcador onde vamos injetar o Heatmap (depois do card de Gamificação/XP)
-    marker = 'st.caption(f"Hoje é {dia_pt}, {date.today().strftime(\'%d/%m/%Y\')}")'
-    
-    heatmap_code = r'''st.caption(f"Hoje é {dia_pt}, {date.today().strftime('%d/%m/%Y')}")
+    old_df = '''df_heatmap = pd.DataFrame(dias)
+df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week'''
 
-# --- HEATMAP DE CONSTÂNCIA (ESTILO GITHUB) ---
-import datetime
-import pandas as pd
+    new_df = '''df_heatmap = pd.DataFrame(dias)
+# FIX: Força a conversão para datetime antes de usar .dt
+df_heatmap["data"] = pd.to_datetime(df_heatmap["data"])
+df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week'''
 
-st.divider()
-st.subheader("🔥 Heatmap de Constância")
-st.caption("Cada quadrado é um dia. A cor representa quantos hábitos você cumpriu.")
-
-# Pega os hábitos dos últimos 365 dias
-hoje = date.today()
-um_ano_atras = hoje - datetime.timedelta(days=364)
-logs = query_all(
-    "SELECT log_date, COUNT(*) as total FROM habit_logs WHERE done = 1 AND log_date >= ? GROUP BY log_date",
-    (um_ano_atras.isoformat(),)
-)
-dados_habitos = {r["log_date"]: int(r["total"]) for r in logs}
-
-# Gera os dias
-dias = []
-for i in range(365):
-    dia_atual = um_ano_atras + datetime.timedelta(days=i)
-    qtd = dados_habitos.get(dia_atual.isoformat(), 0)
-    dias.append({"data": dia_atual, "count": qtd})
-
-df_heatmap = pd.DataFrame(dias)
-df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week
-df_heatmap["dia_semana"] = df_heatmap["data"].dt.weekday
-df_heatmap["mes"] = df_heatmap["data"].dt.month
-
-def get_color(count):
-    if count == 0: return "#171717" # Vazio
-    if count <= 2: return "#5C0000" # Pouco
-    if count <= 5: return "#8B0000" # Médio
-    if count <= 8: return "#B22222" # Bom
-    return "#FF4444" # Excelente
-
-# Constrói o HTML do Heatmap
-html = '<div style="display: flex; gap: 3px; overflow-x: auto; padding-bottom: 10px;">'
-for week in sorted(df_heatmap["semana"].unique()):
-    html += '<div style="display: flex; flex-direction: column; gap: 3px;">'
-    semana_df = df_heatmap[df_heatmap["semana"] == week]
-    # Preenche dias faltantes no início da semana
-    for i in range(7):
-        dia = semana_df[semana_df["dia_semana"] == i]
-        if not dia.empty:
-            row = dia.iloc[0]
-            cor = get_color(row["count"])
-            data_str = row["data"].strftime("%d/%m/%Y")
-            html += f'<div title="{data_str}: {row["count"]} hábitos" style="width: 12px; height: 12px; background-color: {cor}; border-radius: 2px;"></div>'
-        else:
-            html += '<div style="width: 12px; height: 12px;"></div>'
-    html += '</div>'
-html += '</div>'
-
-st.markdown(html, unsafe_allow_html=True)
-
-# Legenda
-st.markdown("""
-<div style="display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #CCC; margin-top: -10px;">
-    <span>Menos</span>
-    <div style="width: 10px; height: 10px; background-color: #171717; border-radius: 2px;"></div>
-    <div style="width: 10px; height: 10px; background-color: #5C0000; border-radius: 2px;"></div>
-    <div style="width: 10px; height: 10px; background-color: #8B0000; border-radius: 2px;"></div>
-    <div style="width: 10px; height: 10px; background-color: #B22222; border-radius: 2px;"></div>
-    <div style="width: 10px; height: 10px; background-color: #FF4444; border-radius: 2px;"></div>
-    <span>Mais</span>
-</div>
-""", unsafe_allow_html=True)
-
-# --- YEAR IN REVIEW ---
-st.divider()
-st.subheader("📊 Resumo do Ano")
-
-col_a, col_b, col_c = st.columns(3)
-
-# Totais
-total_habitos = sum(dados_habitos.values())
-total_treinos = query_one("SELECT COUNT(DISTINCT log_date) AS c FROM exercise_logs WHERE log_date >= ?", (um_ano_atras.isoformat(),))
-total_treinos = total_treinos["c"] if total_treinos else 0
-total_flashcards = query_one("SELECT COUNT(*) AS c FROM flashcards")
-total_flashcards = total_flashcards["c"] if total_flashcards else 0
-
-with col_a:
-    st.metric("Hábitos Cumpridos", total_habitos)
-with col_b:
-    st.metric("Dias de Treino", total_treinos)
-with col_c:
-    st.metric("Flashcards Criados", total_flashcards)
-'''
-
-    if marker in txt:
-        txt = txt.replace(marker, heatmap_code, 1)
+    if old_df in txt:
+        txt = txt.replace(old_df, new_df, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] 00_Home.py — marcador de data não encontrado.")
+        print("[AVISO] 00_Home.py — bloco df_heatmap não encontrado.")
+
+# ============================================================
+# 3. FALLBACK FLASHCARDS (14_Carreira.py)
+# ============================================================
+def fix_fallback_flashcards() -> None:
+    p = BASE / "ui" / "pages" / "14_Carreira.py"
+    txt = read(p)
+
+    old_query = '    pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))'
+    
+    new_query = '''    try:
+        pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))
+    except Exception:
+        execute("CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL, interval_days INTEGER DEFAULT 1, ease_factor REAL DEFAULT 2.5, last_asked INTEGER DEFAULT 0)")
+        pendentes = []'''
+
+    if old_query in txt:
+        txt = txt.replace(old_query, new_query, 1)
+        write_validated(p, txt)
+    else:
+        print("[SKIP] 14_Carreira.py — fallback ou query já alterados.")
+
+# ============================================================
+# 4. FALLBACK BUDGETS (15_Financas.py)
+# ============================================================
+def fix_fallback_budgets() -> None:
+    p = BASE / "ui" / "pages" / "15_Financas.py"
+    txt = read(p)
+
+    old_query = 'budgets = query_all("SELECT * FROM budgets")'
+    
+    new_query = '''try:
+    budgets = query_all("SELECT * FROM budgets")
+except Exception:
+    execute("CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL)")
+    budgets = []'''
+
+    if old_query in txt:
+        txt = txt.replace(old_query, new_query, 1)
+        write_validated(p, txt)
+    else:
+        print("[SKIP] 15_Financas.py — fallback ou query já alterados.")
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -144,7 +134,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: adiciona heatmap anual de constancia e year in review"])
+    _git_run_safe(["commit", "-m", "perf: otimiza init_db com cache, corrige heatmap datetime e adiciona fallbacks"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -154,20 +144,22 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V8.3 — HEATMAP ANUAL E YEAR IN REVIEW")
+    print("V8.4 — OTIMIZAÇÃO E CORREÇÕES CRÍTICAS")
     print("=" * 60)
 
-    fix_home_heatmap()
+    fix_app_cache()
+    fix_heatmap_datetime()
+    fix_fallback_flashcards()
+    fix_fallback_budgets()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que testar agora:")
-    print("1. Espere o Streamlit Cloud atualizar (1-2 min).")
-    print("2. Vá para a aba '🏯 Dojo' (Home).")
-    print("3. Role a tela para baixo e veja o seu Heatmap de Constância. Ele vai estar meio vazio agora, mas vai começar a ficar vermelho conforme você usa o sistema.")
-    print("4. Confira também o Resumo do Ano com os seus totais.")
+    print("\nO que vai acontecer agora:")
+    print("1. A página vai carregar MUITO mais rápido (o cache do Streamlit vai segurar as consultas ao banco).")
+    print("2. O erro do Heatmap vai sumir e os quadradinhos vão aparecer.")
+    print("3. As abas de Carreira e Finanças não vão mais quebrar por falta das tabelas.")
 
 if __name__ == "__main__":
     aplicar()

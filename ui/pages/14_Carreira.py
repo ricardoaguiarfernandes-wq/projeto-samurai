@@ -245,7 +245,11 @@ TEXTO DO MANUAL:
     st.divider()
     st.subheader("📅 Cartões Pendentes Hoje")
     from datetime import date
-    pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))
+    try:
+        pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))
+    except Exception:
+        execute("CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL, interval_days INTEGER DEFAULT 1, ease_factor REAL DEFAULT 2.5, last_asked INTEGER DEFAULT 0)")
+        pendentes = []
     if not pendentes:
         st.info("Nenhum cartão pendente para hoje. Ótimo trabalho!")
     else:
