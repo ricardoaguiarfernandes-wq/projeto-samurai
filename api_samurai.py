@@ -31,7 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from core.database import execute, query_all, query_one, is_postgres
@@ -372,88 +372,103 @@ REGRAS ESTRITAS:
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 @app.post("/webhook/telegram")
-async def receive_telegram(update: dict):
-    if not TELEGRAM_BOT_TOKEN:
-        return {"status": "error", "message": "Token do Telegram nao configurado no Render."}
+async def receive_telegram(update: dict, background_tasks: BackgroundTasks):
+    # Responde ao Telegram IMEDIATAMENTE e processa em background
+    background_tasks.add_task(process_telegram_message, update)
+    return {"status": "ok"}
+
+def process_telegram_message(update: dict):
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not bot_token:
+        return
     
     message = update.get("message", {})
     chat_id = message.get("chat", {}).get("id")
     if not chat_id:
-        return {"status": "ignored"}
+        return
         
     def reply(text: str):
         requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
             json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
             timeout=10
         )
 
-    # --- MODO 1: FOTO (Auto-Categorização de Gastos) ---
+    # --- MODO 1: FOTO (Auto-Categorizacao) ---
     if "photo" in message:
         reply("📸 Analisando comprovante e categorizando...")
         file_id = message["photo"][-1]["file_id"]
         
-        # Baixa a imagem do Telegram
-        r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}", timeout=10)
+        r = requests.get(f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}", timeout=10)
         file_path = r.json().get("result", {}).get("file_path")
         
         if file_path:
-            img_bytes = requests.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}", timeout=10).content
+            img_bytes = requests.get(f"https://api.telegram.org/file/bot{bot_token}/{file_path}", timeout=10).content
             
             from services.ai import ask_gemini_vision
-            prompt = """Extraia os dados deste comprovante e retorne APENAS um JSON válido, sem markdown:
-            {"amount": 0.0, "description": "Nome do Local", "category": "Alimentação/Transporte/Lazer/Outros"}
-            Se não for um comprovante, retorne {"error": "not_a_receipt"}."""
+            prompt = """Extraia os dados deste comprovante e retorne APENAS um JSON valido, sem markdown:
+            {"amount": 0.0, "description": "Nome do Local", "category": "Alimentacao/Transporte/Lazer/Outros"}
+            Se nao for um comprovante, retorne {"error": "not_a_receipt"}."""
             
             res = ask_gemini_vision(img_bytes, prompt)
-            m = re.search(r'\{.*\}', res, re.DOTALL)
+            
+            import re as _re
+            m = _re.search(r'\{.*\}', res, _re.DOTALL)
             
             if m:
                 try:
                     data = json.loads(m.group(0))
                     if "error" in data:
-                        reply("⚠️ Não consegui identificar um comprovante nessa imagem.")
+                        reply("⚠️ Nao consegui identificar um comprovante nessa imagem.")
                     else:
                         execute(
                             "INSERT INTO expenses (expense_date, description, amount, category) VALUES (?, ?, ?, ?)",
                             (date.today().isoformat(), data.get("description", "Desconhecido"), data.get("amount", 0.0), data.get("category", "Outros"))
                         )
-                        reply(f"✅ Gasto registrado: *{data.get('description')}* \nValor: R$ {data.get('amount'):.2f} \nCategoria: {data.get('category')}")
+                        msg = f"✅ Gasto registrado: *{data.get('description')}*\n"
+                        msg += f"Valor: R$ {data.get('amount'):.2f}\n"
+                        msg += f"Categoria: {data.get('category')}"
+                        reply(msg)
                 except Exception as e:
                     reply(f"⚠️ Erro ao processar JSON: {e}")
             else:
-                reply("⚠️ A IA não conseguiu ler o comprovante.")
+                reply("⚠️ A IA nao conseguiu ler o comprovante.")
         else:
             reply("⚠️ Falha ao baixar a imagem do Telegram.")
 
-    # --- MODO 2: TEXTO (Memória do Diário / RAG) ---
+    # --- MODO 2: TEXTO (RAG Geral ou Diario) ---
     elif "text" in message:
-        text = message["text"]
-        
+        text = message["text"].strip()
+        if text.lower() in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "eae", "e ai"]:
+            reply("Saudações, Samurai! 🥋 Como posso te ajudar hoje? (Pode mandar uma foto de comprovante ou uma pergunta).")
+            return
+
         if text.startswith("/start"):
-            reply("🥋 Bem-vindo ao Dojo Digital. Envie uma foto de comprovante ou digite sua dúvida para consultar o diário.")
-            return {"status": "ok"}
+            reply("🥋 Bem-vindo ao Dojo Digital. Envie uma foto de comprovante ou digite sua duvida.")
+            return
             
-        reply("🧠 Consultando as memórias do seu diário...")
+        reply("🧠 Consultando minhas memórias e conhecimento...")
         entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY entry_date DESC LIMIT 20")
         
-        if not entries:
-            reply("Ainda não tenho registros no seu diário para consultar.")
-            return {"status": "ok"}
+        ctx = ""
+        if entries:
+            ctx = "\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries])
+        else:
+            ctx = "(Nenhum registro no diário ainda)"
             
-        ctx = "\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries])
-        
         from services.ai import ask_gemini
-        prompt = f"""Atue como meu Mentor Samurai. Baseado APENAS nestes registros recentes do meu diário:
+        
+        prompt = f"""Atue como meu Mentor Samurai e Sistema Operacional Pessoal.
+Aqui estão os registros recentes do meu diário (podem ou não ser relevantes para a pergunta):
 {ctx}
 
-Responda à minha pergunta: "{text}"
-Se a resposta não estiver nos registros, diga que não encontrou. Seja direto e empático."""
-        
+Pergunta do usuario: "{text}"
+
+Responda de forma sabia, direta e empatica. Se a pergunta for sobre o diario (ex: "como eu estava?", "o que eu escrevi?"), use os registros fornecidos. Se for uma pergunta geral (ex: sugestoes de lazer, filosofia, treino), responda usando seu proprio conhecimento, mas mantenha o tom de mentor samurai."""
+
         res = ask_gemini(prompt)
         reply(res)
-        
-    return {"status": "ok"}
+
 
 # ============================================================
 # WEBHOOK DE EMAIL (compat — substitui webhook_render antigo)
