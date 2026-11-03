@@ -8,40 +8,37 @@ import requests
 from core.database import execute, query_one, query_all
 
 def get_ddl():
-    from core.database import is_postgres
-    is_pg = is_postgres()
-
+    # DDL Puro PostgreSQL
     ddl_base = [
-        """CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, pillar TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));""",
-        """CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, habit_id INTEGER NOT NULL, log_date TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, notes TEXT, FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE, UNIQUE (habit_id, log_date));""",
-        """CREATE TABLE IF NOT EXISTS daily_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, checkin_date TEXT NOT NULL UNIQUE, energy INTEGER NOT NULL, sleep_hours REAL NOT NULL, mood TEXT, stress INTEGER NOT NULL, notes TEXT);""",
-        """CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, expense_date TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, category TEXT, notes TEXT);""",
-        """CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, rate TEXT);""",
-        """CREATE TABLE IF NOT EXISTS daily_briefs (id INTEGER PRIMARY KEY AUTOINCREMENT, brief_date TEXT NOT NULL UNIQUE, content TEXT NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS body_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, log_date TEXT NOT NULL UNIQUE, weight REAL NOT NULL, body_fat REAL, notes TEXT);""",
+        """CREATE TABLE IF NOT EXISTS habits (id SERIAL PRIMARY KEY, name TEXT NOT NULL, pillar TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
+        """CREATE TABLE IF NOT EXISTS habit_logs (id SERIAL PRIMARY KEY, habit_id INTEGER NOT NULL, log_date TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, notes TEXT, FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE, UNIQUE (habit_id, log_date));""",
+        """CREATE TABLE IF NOT EXISTS daily_checkins (id SERIAL PRIMARY KEY, checkin_date TEXT NOT NULL UNIQUE, energy INTEGER NOT NULL, sleep_hours REAL NOT NULL, mood TEXT, stress INTEGER NOT NULL, notes TEXT);""",
+        """CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, expense_date TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, category TEXT, notes TEXT);""",
+        """CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id SERIAL PRIMARY KEY, name TEXT, amount REAL, rate TEXT);""",
+        """CREATE TABLE IF NOT EXISTS daily_briefs (id SERIAL PRIMARY KEY, brief_date TEXT NOT NULL UNIQUE, content TEXT NOT NULL);""",
+        """CREATE TABLE IF NOT EXISTS body_metrics (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL UNIQUE, weight REAL NOT NULL, body_fat REAL, notes TEXT);""",
         """CREATE TABLE IF NOT EXISTS user_stats (id INTEGER PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1);""",
         """CREATE TABLE IF NOT EXISTS achievements (id TEXT PRIMARY KEY, earned_at TEXT NOT NULL);""",
         """CREATE TABLE IF NOT EXISTS user_settings (id INTEGER PRIMARY KEY, workout_split TEXT, workout_start_date TEXT);""",
         """CREATE TABLE IF NOT EXISTS discipline (id INTEGER PRIMARY KEY, start_date TEXT, longest_streak INTEGER DEFAULT 0);""",
-        """CREATE TABLE IF NOT EXISTS career_missions (id INTEGER PRIMARY KEY AUTOINCREMENT, mission_date TEXT NOT NULL, task TEXT NOT NULL, completed INTEGER DEFAULT 0);""",
-        """CREATE TABLE IF NOT EXISTS manuals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')));""",
-        """CREATE TABLE IF NOT EXISTS sos_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, log_date TEXT NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS journal_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",
-        """CREATE TABLE IF NOT EXISTS book_progress (id INTEGER PRIMARY KEY AUTOINCREMENT, book_title TEXT NOT NULL UNIQUE, current_page INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, notes TEXT, last_update TEXT NOT NULL DEFAULT (datetime('now')));""",
-        """CREATE TABLE IF NOT EXISTS exercise_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, log_date TEXT NOT NULL, exercise_name TEXT NOT NULL, reps INTEGER NOT NULL DEFAULT 0, sets INTEGER NOT NULL DEFAULT 1, notes TEXT, UNIQUE (log_date, exercise_name));""",
-        """CREATE TABLE IF NOT EXISTS book_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, book_title TEXT NOT NULL, chunk_index INTEGER NOT NULL, text_content TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, UNIQUE (book_title, chunk_index));""",
-        """CREATE TABLE IF NOT EXISTS bible_verses (id INTEGER PRIMARY KEY AUTOINCREMENT, book_name TEXT NOT NULL, book_abbrev TEXT, chapter INTEGER NOT NULL, verse INTEGER NOT NULL, text TEXT NOT NULL, word_count INTEGER NOT NULL);""",
+        """CREATE TABLE IF NOT EXISTS career_missions (id SERIAL PRIMARY KEY, mission_date TEXT NOT NULL, task TEXT NOT NULL, completed INTEGER DEFAULT 0);""",
+        """CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
+        """CREATE TABLE IF NOT EXISTS sos_logs (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL);""",
+        """CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",
+        """CREATE TABLE IF NOT EXISTS book_progress (id SERIAL PRIMARY KEY, book_title TEXT NOT NULL UNIQUE, current_page INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, notes TEXT, last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
+        """CREATE TABLE IF NOT EXISTS exercise_logs (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL, exercise_name TEXT NOT NULL, reps INTEGER NOT NULL DEFAULT 0, sets INTEGER NOT NULL DEFAULT 1, notes TEXT, UNIQUE (log_date, exercise_name));""",
+        """CREATE TABLE IF NOT EXISTS book_chunks (id SERIAL PRIMARY KEY, book_title TEXT NOT NULL, chunk_index INTEGER NOT NULL, text_content TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, UNIQUE (book_title, chunk_index));""",
+        """CREATE TABLE IF NOT EXISTS bible_verses (id SERIAL PRIMARY KEY, book_name TEXT NOT NULL, book_abbrev TEXT, chapter INTEGER NOT NULL, verse INTEGER NOT NULL, text TEXT NOT NULL, word_count INTEGER NOT NULL);""",
         """CREATE TABLE IF NOT EXISTS reading_plan (day INTEGER PRIMARY KEY, start_verse_id INTEGER, end_verse_id INTEGER);""",
         """CREATE TABLE IF NOT EXISTS reading_progress (day INTEGER PRIMARY KEY, completed INTEGER DEFAULT 0);""",
-        """CREATE TABLE IF NOT EXISTS newsletters_inbox (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, sender TEXT NOT NULL, content TEXT NOT NULL, received_at TEXT NOT NULL DEFAULT (datetime('now')));""",
-        """CREATE TABLE IF NOT EXISTS portfolio (id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL UNIQUE, quantity INTEGER NOT NULL, average_price REAL NOT NULL);""",
+        """CREATE TABLE IF NOT EXISTS newsletters_inbox (id SERIAL PRIMARY KEY, subject TEXT NOT NULL, sender TEXT NOT NULL, content TEXT NOT NULL, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
+        """CREATE TABLE IF NOT EXISTS portfolio (id SERIAL PRIMARY KEY, ticker TEXT NOT NULL UNIQUE, quantity INTEGER NOT NULL, average_price REAL NOT NULL);""",
+        """CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL, interval_days INTEGER DEFAULT 1, ease_factor REAL DEFAULT 2.5, last_asked INTEGER DEFAULT 0);""",
+        """CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL);""",
         "CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(log_date);",
         "CREATE INDEX IF NOT EXISTS idx_checkins_date ON daily_checkins(checkin_date);",
         "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);",
     ]
-
-    if is_pg:
-        return [d.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY").replace("datetime('now')", "CURRENT_TIMESTAMP") for d in ddl_base]
     return ddl_base
 
 SEED_HABITS = [

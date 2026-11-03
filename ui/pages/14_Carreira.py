@@ -49,15 +49,7 @@ with tab_manuais:
 
     st.divider()
     st.subheader("📚 Manuais Disponíveis")
-    try:
-        manuais = query_all("SELECT id, title, uploaded_at FROM manuals ORDER BY uploaded_at DESC")
-    except Exception:
-        from core.database import is_postgres
-        if is_postgres():
-            execute("CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-        else:
-            execute("CREATE TABLE IF NOT EXISTS manuals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')))")
-        manuais = []
+    manuais = query_all("SELECT id, title, uploaded_at FROM manuals ORDER BY uploaded_at DESC")
     if not manuais:
         st.info("Nenhum manual cadastrado ainda.")
     else:

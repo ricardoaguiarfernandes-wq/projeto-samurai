@@ -13,6 +13,14 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 import streamlit as st
+
+st.set_page_config(
+    page_title="Projeto Samurai ⚔️",
+    page_icon="⚔️",
+    layout="centered",
+    initial_sidebar_state="expanded",
+)
+
 from core.schema import init_db
 from services.auth import check_password
 
@@ -27,12 +35,6 @@ setup_database()
 if not check_password():
     st.stop()
 
-st.set_page_config(
-    page_title="Projeto Samurai ⚔️",
-    page_icon="⚔️",
-    layout="centered",
-    initial_sidebar_state="expanded",
-)
 
 SAMURAI_CSS = """
 <style>

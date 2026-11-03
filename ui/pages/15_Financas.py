@@ -54,11 +54,7 @@ st.divider()
 
 # --- BARRAS DE PROGRESSO DO ORÇAMENTO ---
 st.subheader("📊 Orçamento em Tempo Real")
-try:
-    budgets = query_all("SELECT * FROM budgets")
-except Exception:
-    execute("CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL)")
-    budgets = []
+budgets = query_all("SELECT * FROM budgets")
 if budgets:
     for b in budgets:
         # Pega o total gasto nesta categoria no mês atual
