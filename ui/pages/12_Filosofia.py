@@ -49,45 +49,61 @@ with tab_debate:
                 prompt = f"Atue como mentor COF. Tema: '{prompt_hoje}'. Usuário disse: '{refl}'. Aponte uma falha lógica e faça 1 pergunta socrática."
                 st.markdown(f"""<div class="samurai-card" style="border-left-color: #2196F3;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>""", unsafe_allow_html=True)
 
+def divide_em_30_dias(texto):
+    """Divide o texto em exatamente 30 partes proporcionais, cortando nos espaços."""
+    total_caracteres = len(texto)
+    chars_por_dia = total_caracteres // 30
+    partes = []
+    inicio = 0
+    
+    for i in range(30):
+        if i == 29: # O último dia pega todo o resto
+            fim = total_caracteres
+        else:
+            fim = inicio + chars_por_dia
+            # Avança até o próximo espaço para não cortar palavras
+            while fim < total_caracteres and not texto[fim].isspace():
+                fim += 1
+                
+        partes.append(texto[inicio:fim].strip())
+        inicio = fim
+        
+    return partes
+
 def show_book_tab(filename, book_name):
     filepath = ASSETS_DIR / filename
     if not filepath.exists():
-        st.error(f"Arquivo {filename} não encontrado na pasta assets. Rode o script de melhoria novamente.")
+        st.error(f"Arquivo {filename} não encontrado na pasta assets.")
         return
 
     text = filepath.read_text(encoding="utf-8")
-    # Divide o texto por "CAPÍTULO" ou "PARTE" ou marcadores de início
-    chapters = re.split(r'(?i)\n\s*(?:CAPÍTULO|PARTE|PRÓLOGO|C A P Í T U L O)\s+[IVXLCDM\d]+', text)
-    chapters = [c.strip() for c in chapters if len(c.strip()) > 100]
     
-    if not chapters:
-        st.info("Nenhum capítulo formatado encontrado no texto.")
-        return
-
+    # Usa a nova divisão por volume de texto
+    dias = divide_em_30_dias(text)
+    
     state_key = f"idx_{filename}"
     if state_key not in st.session_state:
         st.session_state[state_key] = 0
 
     idx = st.session_state[state_key]
-    if idx >= len(chapters):
+    if idx >= len(dias):
         idx = 0
         st.session_state[state_key] = 0
 
-    st.subheader(f"📖 {book_name} — Módulo {idx+1} de {len(chapters)}")
+    st.subheader(f"📖 {book_name} — Dia {idx+1} de 30")
     
     # Área de Leitura
-    with st.expander("Ler o texto base deste módulo", expanded=True):
-        # Exibe uma versão truncada para não travar a tela, o texto completo fica no contexto da IA
-        display_text = chapters[idx][:3000] + "\n\n[...]*(O texto continua, use a IA para aprofundar)*" if len(chapters[idx]) > 3000 else chapters[idx]
+    with st.expander("Ler o texto base de hoje", expanded=True):
+        display_text = dias[idx]
         st.markdown(f"<div style='white-space: pre-wrap; line-height: 1.6;'>{display_text}</div>", unsafe_allow_html=True)
 
     # Navegação
     col1, col2 = st.columns(2)
-    if col1.button("⬅️ Módulo Anterior", key=f"prev_{filename}", use_container_width=True):
+    if col1.button("⬅️ Dia Anterior", key=f"prev_{filename}", use_container_width=True):
         st.session_state[state_key] = max(0, idx - 1)
         st.rerun()
-    if col2.button("Próximo Módulo ➡️", key=f"next_{filename}", use_container_width=True):
-        st.session_state[state_key] = min(len(chapters) - 1, idx + 1)
+    if col2.button("Próximo Dia ➡️", key=f"next_{filename}", use_container_width=True):
+        st.session_state[state_key] = min(len(dias) - 1, idx + 1)
         st.rerun()
 
     st.divider()
@@ -97,9 +113,9 @@ def show_book_tab(filename, book_name):
     if st.button("🧠 Gerar Aula Prática com IA", key=f"ia_{filename}", use_container_width=True):
         with st.spinner("O Mentor está preparando sua aula diária..."):
             prompt = f"""Atue como o mestre e mentor Felipe Alves, ensinando os conceitos dos seus livros.
-O usuário está estudando o livro '{book_name}'.
-Aqui está o trecho do módulo de hoje:
-{chapters[idx][:6000]}
+O usuário está estudando o livro '{book_name}', no dia {idx+1} de 30.
+Aqui está o trecho da leitura de hoje:
+{dias[idx][:6000]}
 
 Sua missão:
 1. Crie 3 tópicos de reflexão sobre o texto (explicando o conceito de forma clara).
@@ -108,7 +124,7 @@ Sua missão:
 Seja direto, empolgante e prático.
 """
             resposta = ask_gemini(prompt)
-            st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Aula: {book_name}</div><div style="white-space: pre-wrap;">{resposta}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Aula do Dia {idx+1}</div><div style="white-space: pre-wrap;">{resposta}</div></div>', unsafe_allow_html=True)
 
 with tab_gp:
     show_book_tab("grimorio_proibido.txt", "Grimório Proibido")
