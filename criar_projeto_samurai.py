@@ -1,26 +1,22 @@
 """
-criar_projeto_samurai.py — V9.0 (O Patch Definitivo: RAG, Valuation, PWA e WhatsApp)
+criar_projeto_samurai.py — V9.1 (Grimórios de Filosofia e Presença)
 
 ENTREGAS:
-1. DB: Ativa pgvector e adiciona a coluna 'embedding' em journal_entries.
-2. AI: Adiciona função de embeddings (text-embedding-004) no services/ai.py.
-3. UI (06_Autoconhecimento.py): Salva o embedding a cada nova reflexão.
-4. UI (04_Patrimonio.py): Adiciona o valuation (lucro/prejuízo) em tempo real.
-5. APP: Injeta o CSS para esconder o cabeçalho do Streamlit (modo PWA).
-6. API (Telegram): Altera a busca do diário para usar RAG Vetorial.
-7. API (WhatsApp): Cria a rota /webhook/whatsapp (para Z-API/Twilio).
+1. ASSETS: Cria os arquivos de texto 'grimorio_proibido.txt' e 'grimorio_presenca.txt'.
+2. UI (12_Filosofia.py): Adiciona 2 novas abas e a lógica de paginação (Leitura Diária).
+3. IA: Cria o botão "Gerar Aula Prática com IA" focado no capítulo do dia.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
 from __future__ import annotations
 
 import ast
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
+ASSETS_DIR = BASE / "assets"
 
 def _git_run_safe(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(["git"] + args, cwd=BASE, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
@@ -35,260 +31,226 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. DB & RAG (schema.py)
+# 1. CRIAR OS ARQUIVOS DE TEXTO (ASSETS)
 # ============================================================
-def fix_schema_vector() -> None:
-    p = BASE / "core" / "schema.py"
-    txt = read(p)
-
-    if "vector(768)" in txt:
-        print("[SKIP] schema.py — coluna embedding já existe.")
-        return
-
-    # Adiciona a extensão pgvector e a coluna de embedding
-    if "CREATE EXTENSION IF NOT EXISTS vector;" not in txt:
-        old_ddl = '"""CREATE TABLE IF NOT EXISTS habits (id SERIAL PRIMARY KEY, name TEXT NOT NULL, pillar TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",'
-        new_ddl = '"CREATE EXTENSION IF NOT EXISTS vector;",\n        ' + old_ddl
-        txt = txt.replace(old_ddl, new_ddl, 1)
-
-    old_journal = '"""CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",'
-    new_journal = '"""CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT, embedding vector(768));""",'
+def create_text_files() -> None:
+    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     
-    if old_journal in txt:
-        txt = txt.replace(old_journal, new_journal, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] schema.py — tabela journal_entries não encontrada.")
+    # Texto do Grimório Proibido (Início)
+    proibido_path = ASSETS_DIR / "grimorio_proibido.txt"
+    if not proibido_path.exists():
+        conteudo_proibido = """GRIMÓRIO PROIBIDO
+FACA QUALQUER MULHER TE DESEJAR COM UMA FRASE
+
+PRÓLOGO - A CARTA AO INICIADO
+
+Se este livro chegou nas suas mãos, não foi por acaso. Eu não sei quem te indicou. Não sei o que te fez parar na capa. Não sei o que aconteceu na sua vida antes desta página. Mas sei de uma coisa: alguma parte de você já desconfiava que estava jogando o jogo errado. Você tentou ser bom. Tentou ser educado. Tentou ser engraçado. Tentou ser interessante. Tentou ser o cara legal, o cara firme, o cara confiante, o cara misterioso. Tentou copiar conselhos da internet, frases prontas, gurus de Instagram, vídeos do YouTube com milhões de visualizações. Algumas coisas funcionaram. A maioria não.
+
+E o pior: quando funcionou, você não soube por quê. Quando falhou, você também não soube por quê. É como se existisse um jogo invisível sendo jogado ao seu redor, com regras que ninguém te explicou, e você ficasse ali no meio do tabuleiro, fazendo movimentos no escuro, esperando dar sorte. Eu já estive aí. Cada homem que vale alguma coisa já esteve.
+
+E é por isso que este livro existe.
+
+Antes de continuar, preciso te dizer uma coisa que talvez te incomode. Este livro não é sobre conquistar mulheres. Calma. Antes que você feche, me escuta. Este livro é sobre entender o desejo. Sobre entender a mente feminina. Sobre entender o jogo social que acontece toda vez que dois seres humanos se olham, se aproximam, se medem, se desejam, se rejeitam, se enfeitiçam. E sobre entender, no fim das contas, você mesmo. Porque a verdade que ninguém te contou é simples: o homem que conquista mulheres de verdade não é o homem que aprendeu técnicas. É o homem que aprendeu a enxergar. A mulher. O mundo. A si próprio.
+
+Conquistar é consequência. Enxergar é o trabalho.
+
+Eu chamo o leitor deste livro de Iniciado. Não por arrogância. Não por brincadeira mística. Mas porque é o que você é, neste momento, na primeira página. Iniciado é o homem que percebeu que existe alguma coisa que ele ainda não sabe. Que existe um nível de compreensão que ele ainda não acessou. Que existe uma versão dele esperando para ser construída, e ele finalmente decidiu fazer a travessia. Não é elogio. É descrição. Você está aqui porque alguma coisa em você sabe que existe mais.
+
+CAPÍTULO I - A GRANDE MENTIRA
+
+Antes de qualquer coisa, eu preciso te tirar uma ilusão da cabeça. Não tem outro jeito. Se a ilusão ficar, nada do que vem depois neste livro vai funcionar. Vai ser como tentar construir uma casa em cima de areia. Bonito por uns dias, ruína em semanas. A ilusão é esta: Você acredita que sedução é alguma coisa que você faz. Uma técnica. Uma frase. Uma postura. Um truque. Um movimento. Um gesto certo no momento certo. Você acredita que existe, em algum lugar, uma linha mágica. Uma sequência de palavras. Um jeito específico de chegar. E que, se você descobrir essa fórmula, vai conseguir conquistar a mulher que você quer.
+
+Eu já acreditei nisso também. A maioria dos homens acredita. Tem indústria inteira ganhando dinheiro com essa crença. Mas é mentira. E enquanto você acreditar nela, vai continuar fracassando com mulheres importantes. Vai continuar tendo resultado raso com mulheres rasas. Vai continuar achando que faltou "encontrar o estilo certo de cantada".
+
+Olha. Eu quero que você pense, agora, em algum homem que você conhece que tem facilidade absurda com mulheres. Não o do filme. Não o do Instagram. Um cara real. Um amigo. Um conhecido. Aquele primo. Aquele colega de trabalho. Aquele cara que você cresceu vendo. Pensa nele. Ele é o mais bonito do seu círculo? Provavelmente não. Ele tem o corpo mais trabalhado? Provavelmente não. Ele tem o maior salário? O carro mais caro? A roupa mais cara? Provavelmente não. Ele decora frases prontas? Treina abordagem na frente do espelho? Lê livros de pickup? Quase certamente não.
+
+E ainda assim, mulheres se aproximam dele. Conversam mais demoradamente. Riem mais do que precisariam rir. Dão atenção que outros caras pagariam para receber. Por quê?
+
+Essa pergunta é o primeiro portal. Se você não responder ela com honestidade, o livro não funciona. A resposta não é carisma. Carisma é palavra-coringa que ninguém sabe explicar. A resposta também não é "ele é seguro de si". Isso é vago demais. Existe segurança falsa, segurança performada, segurança decorada. Mulher reconhece essas em três segundos. A resposta verdadeira é esta:
+
+Esse homem não está fazendo nada. Esse homem está sendo. E ser, para o cérebro feminino, é mil vezes mais magnético do que fazer.
+
+Eu quero que você grave isso na medula. Sedução não é o que você faz na frente dela. Sedução é o que você é antes de chegar perto dela. Releia essa frase. Devagar. Sedução não é o que você faz na frente dela. Sedução é o que você é antes de chegar perto dela. Essa frase, sozinha, vale o preço deste livro. Se você sair daqui só com ela, e ela for plantada de verdade, sua vida com mulheres já vai começar a mudar.
+
+(Nota: Para adicionar o resto do livro, basta abrir o arquivo `assets/grimorio_proibido.txt` na sua pasta e colar o restante do texto do PDF. O app dividirá automaticamente por capítulos)."""
+        proibido_path.write_text(conteudo_proibido, encoding="utf-8")
+        print("[OK] assets/grimorio_proibido.txt criado.")
+
+    # Texto do Grimório da Presença (Início)
+    presenca_path = ASSETS_DIR / "grimorio_presenca.txt"
+    if not presenca_path.exists():
+        conteudo_presenca = """GRIMÓRIO DA PRESENÇA
+O dossiê da linguagem não verbal masculina
+
+CAPÍTULO 1 - O JULGAMENTO DE MEIO SEGUNDO
+
+Eu tenho duas gravações que mudaram a minha vida. E vão mudar a sua. Nas duas, sou eu, na mesma rua, na mesma semana, abordando duas mulheres parecidas com quase as mesmas palavras. Na primeira, ela sorri por educação, olha o relógio e vai embora em trinta segundos. Na segunda, ela ri, o corpo dela vira inteiro na minha direção, e no fim ela digita o número dela no meu celular.
+
+Passei uma madrugada alternando entre os dois vídeos, procurando a frase mágica que eu teria dito num e não no outro. Não existia. As palavras eram praticamente idênticas. Então eu tirei o som.
+
+E no mudo, os dois vídeos se tornaram duas cenas completamente diferentes. No primeiro, um homem de ombros comprimidos, peso trocando de perna, mãos inquietas, queixo levemente baixo — um homem pedindo desculpas por existir. No segundo, um homem parado, aberto, sem pressa — um homem confortável no próprio corpo. Ela não escolheu entre duas frases. Escolheu entre dois homens.
+
+Naquela madrugada nasceu a pergunta que me consumiu pelos cinco anos seguintes — anos em que gravei e analisei mais de quinhentas horas das minhas próprias interações, virei estudioso obsessivo de tudo que a ciência da comunicação já produziu, e depois treinei centenas de pessoas pelo Brasil: Se não são as palavras... o que é? Este livro é a resposta. E ela começa aqui.
+
+O mecanismo
+O cérebro humano forma uma impressão de outra pessoa em menos de um segundo — antes da primeira frase terminar, frequentemente antes de começar. Pesquisadores de psicologia social mediram isso repetidas vezes: mostraram rostos e trechos mudos de segundos a voluntários, e as avaliações feitas nesse piscar de olhos previam com precisão assustadora as avaliações feitas após longa convivência. Não é julgamento raso que depois se corrige. É a veredito — o resto da interação, na maioria dos casos, apenas o confirma.
+
+Por que o cérebro faz isso? Porque foi construído num mundo em que decidir devagar se um estranho era ameaça custava a vida. O julgamento instantâneo não é grosseria — é o software de fábrica de todos nós. Você faz o mesmo, o tempo todo, sem perceber.
+
+A consequência é a lei fundamental deste livro: você não se comunica quando decide falar. Você se comunica desde que se torna visível. Sua caminhada fala. Sua postura fala. Seu rosto em repouso fala. Seu silêncio fala. As palavras — que a escola, os pais e a vida inteira te disseram serem "a comunicação" — chegam por último, num tribunal onde a sentença já está quase assinada.
+
+CAPÍTULO 2 - AS DUAS PERGUNTAS
+
+Toda vez que você aparece na frente de um ser humano, o cérebro dele te faz duas perguntas. Ele não escolhe fazê-las — elas rodam sozinhas, herdadas de um passado em que errar a resposta custava a vida:
+
+Pergunta 1: "Eu posso confiar nessa pessoa?" — É amigo ou ameaça? Ela está do meu lado?
+Pergunta 2: "Essa pessoa é capaz?" — Ela tem força, competência, valor? Ela importa?
+
+A ciência da percepção social chama as respostas de calor e força (ou competência) — e décadas de pesquisa convergem num achado brutal: esses dois eixos explicam a esmagadora maioria de toda impressão que formamos de qualquer pessoa. Todo julgamento humano sobre você é, no fundo, um par de notas: quanto calor, quanta força.
+
+Os quatro destinos
+Calor alto + força baixa = o Fofo. Confiável, querido... e dispensável. É o "gente boa" que todo mundo gosta e ninguém respeita, promove ou deseja. Ouve "você é um amor" no trabalho e "você é como um irmão pra mim" no amor — as duas frases são o mesmo diagnóstico: confio em você, mas você não tem peso. A maioria das pessoas boas do mundo mora aqui, sem entender por que bondade não vira resultado.
+
+Força alta + calor baixo = o Intimidante. Respeitado, admirado de longe... e evitado. É o competente que não é chamado pro almoço, o chefe de quem se esconde o problema, a pessoa "difícil de conversar". Ouve "você é meio fechado, né?" a vida inteira e acha que o problema são os outros.
+
+Calor baixo + força baixa = o Invisível. Nem ameaça, nem valor: o cérebro alheio faz a coisa mais econômica que existe — apaga. É a pessoa que ninguém nota que chegou nem que saiu.
+
+Calor alto + força alta = o Magnético. O raro. A pessoa perto de quem os outros se sentem, ao mesmo tempo, seguros e elevados. É o único quadrante em que confiança e desejo, afeto e respeito, coexistem. Carisma, essa palavra mística, tem definição técnica e é só isso: calor e força transmitidos simultaneamente.
+
+(Nota: Para adicionar o resto do livro, basta abrir o arquivo `assets/grimorio_presenca.txt` na sua pasta e colar o restante do texto. O app dividirá automaticamente por capítulos)."""
+        presenca_path.write_text(conteudo_presenca, encoding="utf-8")
+        print("[OK] assets/grimorio_presenca.txt criado.")
 
 # ============================================================
-# 2. AI SERVICE (services/ai.py)
+# 2. ATUALIZAR A PÁGINA DE FILOSOFIA
 # ============================================================
-def fix_ai_embeddings() -> None:
-    p = BASE / "services" / "ai.py"
+def update_filosofia_page() -> None:
+    p = BASE / "ui" / "pages" / "12_Filosofia.py"
     txt = read(p)
 
-    if "get_embedding" in txt:
-        print("[SKIP] ai.py — função de embedding já existe.")
+    if "Grimório Proibido" in txt:
+        print("[SKIP] 12_Filosofia.py — Grimórios já integrados.")
         return
 
-    func_embedding = '''
-def get_embedding(text: str) -> list[float]:
-    """Gera o embedding (vetor) de um texto para busca semântica (RAG)."""
-    api_key = get_api_key()
-    if not api_key or api_key == "COLE_SUA_CHAVE_AQUI":
-        return []
-    
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.embed_content(
-            model='text-embedding-004',
-            contents=text
-        )
-        return response.embeddings[0].values
-    except Exception as e:
-        print(f"Erro ao gerar embedding: {e}")
-        return []
-'''
-    txt += func_embedding
-    write_validated(p, txt)
+    new_content = '''import streamlit as st
+import sys
+import re
+from pathlib import Path
+from datetime import date
 
-# ============================================================
-# 3. UI AUTOCONHECIMENTO (Salvar Embedding)
-# ============================================================
-def fix_ui_journal_embedding() -> None:
-    p = BASE / "ui" / "pages" / "06_Autoconhecimento.py"
-    txt = read(p)
+_p = Path(__file__).resolve().parents[2]
+if str(_p) not in sys.path:
+    sys.path.insert(0, str(_p))
 
-    if "embedding = get_embedding" in txt:
-        print("[SKIP] 06_Autoconhecimento.py — embedding já salvo.")
-        return
+from core.database import execute, query_one
+from services.ai import ask_gemini
 
-    if "from services.ai import ask_gemini" in txt and "get_embedding" not in txt:
-        txt = txt.replace("from services.ai import ask_gemini", "from services.ai import ask_gemini, get_embedding")
+BASE_DIR = Path(__file__).resolve().parents[2]
+ASSETS_DIR = BASE_DIR / "assets"
 
-    old_save = '''        execute(
-            "INSERT INTO journal_entries (entry_date, prompt, content, ai_reflection) VALUES (?, ?, ?, ?)",
-            (date.today().isoformat(), prompt_do_dia, texto.strip(), reflexao_ia)
-        )'''
+st.title("🏛️ Filosofia & Sabedoria")
 
-    new_save = '''        # Gera o embedding para RAG Vetorial
-        embedding = get_embedding(texto.strip())
-        emb_str = f"[{','.join(map(str, embedding))}]" if embedding else None
+tab_video, tab_debate, tab_gp, tab_gpres = st.tabs([
+    "🎬 Aula em Vídeo", 
+    "🧠 Debate Socrático", 
+    "🕵️ Grimório Proibido", 
+    "👑 Grimório da Presença"
+])
 
-        execute(
-            "INSERT INTO journal_entries (entry_date, prompt, content, ai_reflection, embedding) VALUES (?, ?, ?, ?, ?::vector)",
-            (date.today().isoformat(), prompt_do_dia, texto.strip(), reflexao_ia, emb_str)
-        )'''
-
-    if old_save in txt:
-        txt = txt.replace(old_save, new_save, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] 06_Autoconhecimento.py — bloco de insert do journal não encontrado.")
-
-# ============================================================
-# 4. UI PATRIMÔNIO (Valuation em Tempo Real)
-# ============================================================
-def fix_ui_patrimonio_valuation() -> None:
-    p = BASE / "ui" / "pages" / "04_Patrimonio.py"
-    txt = read(p)
-
-    if "Lucro/Prejuízo" in txt:
-        print("[SKIP] 04_Patrimonio.py — valuation já existe.")
-        return
-
-    old_card = '''    for a in carteira:
-        st.markdown(f'<div class="samurai-card" style="padding: 10px;"><b>{a["ticker"]}</b> - {a["quantity"]} cotas @ R$ {a["average_price"]:.2f}</div>', unsafe_allow_html=True)'''
-
-    new_card = '''    import yfinance as yf
-    
-    for a in carteira:
-        ticker = a['ticker']
-        ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
-        
+with tab_video:
+    st.header("Assistir Aula (COF ou outros)")
+    video_link = st.text_input("Cole o link do vídeo (YouTube):", placeholder="https://www.youtube.com/watch?v=...")
+    if video_link:
         try:
-            data = yf.Ticker(ticker_busca).history(period="1d")
-            preco_atual = float(data['Close'].iloc[-1]) if not data.empty else a['average_price']
-        except Exception:
-            preco_atual = a['average_price']
-            
-        valor_investido = a['quantity'] * a['average_price']
-        valor_atual = a['quantity'] * preco_atual
-        lucro = valor_atual - valor_investido
-        lucro_pct = (lucro / valor_investido) * 100 if valor_investido > 0 else 0
-        
-        cor = "#4CAF50" if lucro >= 0 else "#F44336"
-        sinal = "+" if lucro >= 0 else ""
-        
-        st.markdown(f"""
-        <div class="samurai-card" style="padding: 10px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <b>{ticker}</b><br>
-                <span style="font-size: 0.8rem; color: #CCC;">{a['quantity']} cotas @ R$ {a['average_price']:.2f}</span>
-            </div>
-            <div style="text-align: right;">
-                <span style="font-size: 1.1rem; font-weight: bold;">R$ {valor_atual:.2f}</span><br>
-                <span style="font-size: 0.85rem; color: {cor};">{sinal}R$ {lucro:.2f} ({sinal}{lucro_pct:.1f}%)</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)'''
+            st.video(video_link)
+            if st.button("🧠 Resumir Aula com IA", use_container_width=True):
+                with st.spinner("Preparando resumo..."):
+                    prompt = f"Atue como professor de filosofia. Crie um resumo dos principais conceitos e 3 perguntas de reflexão sobre a aula contida no link: {video_link}"
+                    st.markdown(f"""<div class="samurai-card" style="border-left-color: #F9A825;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>""", unsafe_allow_html=True)
+        except:
+            st.error("Link de vídeo inválido.")
 
-    if old_card in txt:
-        txt = txt.replace(old_card, new_card, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] 04_Patrimonio.py — bloco do card de ação não encontrado.")
+with tab_debate:
+    st.header("Desafio Intelectual do Dia")
+    PROMPTS = ["O que é a verdadeira ignorância: não saber, ou saber e não aplicar?", "O que a sua rotina diz sobre a sua visão de mundo?", "Como a ordem no ambiente físico reflete a ordem da mente?"]
+    prompt_hoje = PROMPTS[date.today().toordinal() % len(PROMPTS)]
+    st.markdown(f"""<div class="samurai-card"><div class="titulo">Reflexão</div><div class="valor" style="font-size:1.2rem;">{prompt_hoje}</div></div>""", unsafe_allow_html=True)
+    
+    with st.form("form_fil"):
+        refl = st.text_area("Sua resposta:")
+        if st.form_submit_button("Debater com Mentor", use_container_width=True) and refl:
+            with st.spinner("Analisando..."):
+                prompt = f"Atue como mentor COF. Tema: '{prompt_hoje}'. Usuário disse: '{refl}'. Aponte uma falha lógica e faça 1 pergunta socrática."
+                st.markdown(f"""<div class="samurai-card" style="border-left-color: #2196F3;"><div style="white-space: pre-wrap;">{ask_gemini(prompt)}</div></div>""", unsafe_allow_html=True)
 
-# ============================================================
-# 5. APP.PY (CSS PWA e Esconder Header)
-# ============================================================
-def fix_app_pwa_css() -> None:
-    p = BASE / "app.py"
-    txt = read(p)
-
-    if "header[data-testid=\"stHeader\"]" in txt:
-        print("[SKIP] app.py — CSS do PWA já aplicado.")
+def show_book_tab(filename, book_name):
+    filepath = ASSETS_DIR / filename
+    if not filepath.exists():
+        st.error(f"Arquivo {filename} não encontrado na pasta assets. Rode o script de melhoria novamente.")
         return
 
-    old_css = '''/* MOBILE OPTIMIZATIONS */
-@media (max-width: 768px) {'''
+    text = filepath.read_text(encoding="utf-8")
+    # Divide o texto por "CAPÍTULO" ou "PARTE" ou marcadores de início
+    chapters = re.split(r'(?i)\\n\\s*(?:CAPÍTULO|PARTE|PRÓLOGO|C A P Í T U L O)\\s+[IVXLCDM\\d]+', text)
+    chapters = [c.strip() for c in chapters if len(c.strip()) > 100]
+    
+    if not chapters:
+        st.info("Nenhum capítulo formatado encontrado no texto.")
+        return
 
-    new_css = '''/* PWA - ESCONDER BARRA DO STREAMLIT NO MOBILE */
-@media (max-width: 768px) {
-    header[data-testid="stHeader"] { display: none !important; }
-    #MainMenu { visibility: hidden !important; }
-    footer { visibility: hidden !important; }
-}
+    state_key = f"idx_{filename}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = 0
 
-/* MOBILE OPTIMIZATIONS */
-@media (max-width: 768px) {'''
+    idx = st.session_state[state_key]
+    if idx >= len(chapters):
+        idx = 0
+        st.session_state[state_key] = 0
 
-    if old_css in txt:
-        txt = txt.replace(old_css, new_css, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] app.py — bloco CSS mobile não encontrado.")
+    st.subheader(f"📖 {book_name} — Módulo {idx+1} de {len(chapters)}")
+    
+    # Área de Leitura
+    with st.expander("Ler o texto base deste módulo", expanded=True):
+        # Exibe uma versão truncada para não travar a tela, o texto completo fica no contexto da IA
+        display_text = chapters[idx][:3000] + "\\n\\n[...]*(O texto continua, use a IA para aprofundar)*" if len(chapters[idx]) > 3000 else chapters[idx]
+        st.markdown(f"<div style='white-space: pre-wrap; line-height: 1.6;'>{display_text}</div>", unsafe_allow_html=True)
 
-# ============================================================
-# 6. API (RAG no Telegram + Webhook WhatsApp)
-# ============================================================
-def fix_api_rag_and_whatsapp() -> None:
-    p = BASE / "api_samurai.py"
-    txt = read(p)
+    # Navegação
+    col1, col2 = st.columns(2)
+    if col1.button("⬅️ Módulo Anterior", key=f"prev_{filename}", use_container_width=True):
+        st.session_state[state_key] = max(0, idx - 1)
+        st.rerun()
+    if col2.button("Próximo Módulo ➡️", key=f"next_{filename}", use_container_width=True):
+        st.session_state[state_key] = min(len(chapters) - 1, idx + 1)
+        st.rerun()
 
-    # 6.1 - Atualizar o Telegram para usar RAG
-    if "ORDER BY embedding <-> %s::vector" not in txt:
-        old_ctx = '''        entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY entry_date DESC LIMIT 20")
-        
-        ctx = ""
-        if entries:
-            ctx = "\\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries])
-        else:
-            ctx = "(Nenhum registro no diário ainda)"'''
+    st.divider()
+    
+    # Aula com IA
+    st.write("#### 🎓 Aula do Mentor")
+    if st.button("🧠 Gerar Aula Prática com IA", key=f"ia_{filename}", use_container_width=True):
+        with st.spinner("O Mentor está preparando sua aula diária..."):
+            prompt = f"""Atue como o mestre e mentor Felipe Alves, ensinando os conceitos dos seus livros.
+O usuário está estudando o livro '{book_name}'.
+Aqui está o trecho do módulo de hoje:
+{chapters[idx][:6000]}
 
-        new_ctx = '''        from services.ai import get_embedding
-        query_emb = get_embedding(text)
-        
-        ctx = ""
-        if query_emb:
-            emb_str = f"[{','.join(map(str, query_emb))}]"
-            try:
-                # Busca semântica usando a extensão pgvector
-                entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY embedding <-> %s::vector LIMIT 5", (emb_str,))
-                if entries:
-                    ctx = "\\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries])
-            except Exception as e:
-                print(f"Erro no RAG (usando fallback): {e}")
-                
-        if not ctx:
-            # Fallback se não tiver embedding
-            entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY entry_date DESC LIMIT 5")
-            ctx = "\\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries]) if entries else "(Nenhum registro no diário ainda)"'''
+Sua missão:
+1. Crie 3 tópicos de reflexão sobre o texto (explicando o conceito de forma clara).
+2. Crie 1 exercício prático para o usuário aplicar HOJE na vida real (ex: "Hoje, observe a postura das pessoas no elevador", "Ao conversar com alguém, faça a pausa de 2 segundos antes de responder").
+3. Dê uma frase de impacto final, estilo Samurai.
+Seja direto, empolgante e prático.
+"""
+            resposta = ask_gemini(prompt)
+            st.markdown(f'<div class="samurai-card" style="border-left-color: #F9A825;"><div class="titulo">Aula: {book_name}</div><div style="white-space: pre-wrap;">{resposta}</div></div>', unsafe_allow_html=True)
 
-        if old_ctx in txt:
-            txt = txt.replace(old_ctx, new_ctx, 1)
+with tab_gp:
+    show_book_tab("grimorio_proibido.txt", "Grimório Proibido")
 
-    # 6.2 - Adicionar rota do WhatsApp
-    if "/webhook/whatsapp" not in txt:
-        whatsapp_route = '''
-# ============================================================
-# WEBHOOK DO WHATSAPP (Z-API / Twilio Compatível)
-# ============================================================
-class WhatsAppPayload(BaseModel):
-    message: str
-    sender: str
-
-@app.post("/webhook/whatsapp")
-async def receive_whatsapp(payload: WhatsAppPayload, background_tasks: BackgroundTasks):
-    def process_msg():
-        from services.ai import ask_gemini
-        try:
-            resposta = ask_gemini(f"Atue como o Mentor Samurai no WhatsApp. O usuário disse: '{payload.message}'. Responda de forma direta, amigável e curta.")
-            
-            # Configuração para envio de volta (depende do provedor Z-API/Twilio)
-            # Exemplo genérico para Z-API:
-            import os
-            zapi_instance = os.environ.get("ZAPI_INSTANCE", "")
-            zapi_token = os.environ.get("ZAPI_TOKEN", "")
-            
-            if zapi_instance and zapi_token:
-                requests.post(
-                    f"https://api.z-api.io/instances/{zapi_instance}/token/{zapi_token}/send-text",
-                    json={"phone": payload.sender, "message": resposta},
-                    timeout=10
-                )
-        except Exception as e:
-            print(f"Erro WhatsApp: {e}")
-
-    background_tasks.add_task(process_msg)
-    return {"status": "ok"}
-
+with tab_gpres:
+    show_book_tab("grimorio_presenca.txt", "Grimório da Presença")
 '''
-        marker = 'if __name__ == "__main__":'
-        if marker in txt:
-            txt = txt.replace(marker, whatsapp_route + marker, 1)
-
-    write_validated(p, txt)
+    write_validated(p, new_content)
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -296,7 +258,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "feat: rag vetorial, valuation tempo real, pwa mobile e whatsapp webhook"])
+    _git_run_safe(["commit", "-m", "feat: adiciona abas dos grimorios com leitura diaria e aulas com IA"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -306,26 +268,21 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V9.0 — PATCH DEFINITIVO (RAG, PWA, VALUATION E WHATSAPP)")
+    print("V9.1 — GRIMÓRIOS DE FILOSOFIA")
     print("=" * 60)
 
-    fix_schema_vector()
-    fix_ai_embeddings()
-    fix_ui_journal_embedding()
-    fix_ui_patrimonio_valuation()
-    fix_app_pwa_css()
-    fix_api_rag_and_whatsapp()
+    create_text_files()
+    update_filosofia_page()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que você acabou de instalar:")
-    print("1. 💸 Valuation: Vá em Patrimônio para ver o lucro/prejuízo em tempo real.")
-    print("2. 📱 PWA: Abra o app no celular. A barra do Streamlit sumiu (parece um app nativo).")
-    print("3. 🧠 RAG: Quando enviar uma nova reflexão no Diário, ela será vetorizada.")
-    print("   No Telegram, pergunte algo antigo (ex: 'o que eu decidi em julho?'). A IA vai buscar por similaridade.")
-    print("4. 🟢 WhatsApp: A rota /webhook/whatsapp está pronta. Configure a Z-API no Render para ativar.")
+    print("\n⚠️ PASSO IMPORTANTE:")
+    print("1. O script criou os arquivos na pasta 'assets/' com o início dos livros.")
+    print("2. Vá até a pasta 'assets', abra 'grimorio_proibido.txt' e 'grimorio_presenca.txt'.")
+    print("3. Cole o restante do texto dos seus PDFs nesses arquivos.")
+    print("4. O app do Streamlit vai dividir o texto automaticamente em capítulos e você poderá ler 1 por dia!")
 
 if __name__ == "__main__":
     aplicar()

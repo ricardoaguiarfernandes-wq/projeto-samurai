@@ -1,0 +1,39 @@
+GRIMÓRIO DA PRESENÇA
+O dossiê da linguagem não verbal masculina
+
+CAPÍTULO 1 - O JULGAMENTO DE MEIO SEGUNDO
+
+Eu tenho duas gravações que mudaram a minha vida. E vão mudar a sua. Nas duas, sou eu, na mesma rua, na mesma semana, abordando duas mulheres parecidas com quase as mesmas palavras. Na primeira, ela sorri por educação, olha o relógio e vai embora em trinta segundos. Na segunda, ela ri, o corpo dela vira inteiro na minha direção, e no fim ela digita o número dela no meu celular.
+
+Passei uma madrugada alternando entre os dois vídeos, procurando a frase mágica que eu teria dito num e não no outro. Não existia. As palavras eram praticamente idênticas. Então eu tirei o som.
+
+E no mudo, os dois vídeos se tornaram duas cenas completamente diferentes. No primeiro, um homem de ombros comprimidos, peso trocando de perna, mãos inquietas, queixo levemente baixo — um homem pedindo desculpas por existir. No segundo, um homem parado, aberto, sem pressa — um homem confortável no próprio corpo. Ela não escolheu entre duas frases. Escolheu entre dois homens.
+
+Naquela madrugada nasceu a pergunta que me consumiu pelos cinco anos seguintes — anos em que gravei e analisei mais de quinhentas horas das minhas próprias interações, virei estudioso obsessivo de tudo que a ciência da comunicação já produziu, e depois treinei centenas de pessoas pelo Brasil: Se não são as palavras... o que é? Este livro é a resposta. E ela começa aqui.
+
+O mecanismo
+O cérebro humano forma uma impressão de outra pessoa em menos de um segundo — antes da primeira frase terminar, frequentemente antes de começar. Pesquisadores de psicologia social mediram isso repetidas vezes: mostraram rostos e trechos mudos de segundos a voluntários, e as avaliações feitas nesse piscar de olhos previam com precisão assustadora as avaliações feitas após longa convivência. Não é julgamento raso que depois se corrige. É a veredito — o resto da interação, na maioria dos casos, apenas o confirma.
+
+Por que o cérebro faz isso? Porque foi construído num mundo em que decidir devagar se um estranho era ameaça custava a vida. O julgamento instantâneo não é grosseria — é o software de fábrica de todos nós. Você faz o mesmo, o tempo todo, sem perceber.
+
+A consequência é a lei fundamental deste livro: você não se comunica quando decide falar. Você se comunica desde que se torna visível. Sua caminhada fala. Sua postura fala. Seu rosto em repouso fala. Seu silêncio fala. As palavras — que a escola, os pais e a vida inteira te disseram serem "a comunicação" — chegam por último, num tribunal onde a sentença já está quase assinada.
+
+CAPÍTULO 2 - AS DUAS PERGUNTAS
+
+Toda vez que você aparece na frente de um ser humano, o cérebro dele te faz duas perguntas. Ele não escolhe fazê-las — elas rodam sozinhas, herdadas de um passado em que errar a resposta custava a vida:
+
+Pergunta 1: "Eu posso confiar nessa pessoa?" — É amigo ou ameaça? Ela está do meu lado?
+Pergunta 2: "Essa pessoa é capaz?" — Ela tem força, competência, valor? Ela importa?
+
+A ciência da percepção social chama as respostas de calor e força (ou competência) — e décadas de pesquisa convergem num achado brutal: esses dois eixos explicam a esmagadora maioria de toda impressão que formamos de qualquer pessoa. Todo julgamento humano sobre você é, no fundo, um par de notas: quanto calor, quanta força.
+
+Os quatro destinos
+Calor alto + força baixa = o Fofo. Confiável, querido... e dispensável. É o "gente boa" que todo mundo gosta e ninguém respeita, promove ou deseja. Ouve "você é um amor" no trabalho e "você é como um irmão pra mim" no amor — as duas frases são o mesmo diagnóstico: confio em você, mas você não tem peso. A maioria das pessoas boas do mundo mora aqui, sem entender por que bondade não vira resultado.
+
+Força alta + calor baixo = o Intimidante. Respeitado, admirado de longe... e evitado. É o competente que não é chamado pro almoço, o chefe de quem se esconde o problema, a pessoa "difícil de conversar". Ouve "você é meio fechado, né?" a vida inteira e acha que o problema são os outros.
+
+Calor baixo + força baixa = o Invisível. Nem ameaça, nem valor: o cérebro alheio faz a coisa mais econômica que existe — apaga. É a pessoa que ninguém nota que chegou nem que saiu.
+
+Calor alto + força alta = o Magnético. O raro. A pessoa perto de quem os outros se sentem, ao mesmo tempo, seguros e elevados. É o único quadrante em que confiança e desejo, afeto e respeito, coexistem. Carisma, essa palavra mística, tem definição técnica e é só isso: calor e força transmitidos simultaneamente.
+
+(Nota: Para adicionar o resto do livro, basta abrir o arquivo `assets/grimorio_presenca.txt` na sua pasta e colar o restante do texto. O app dividirá automaticamente por capítulos).
