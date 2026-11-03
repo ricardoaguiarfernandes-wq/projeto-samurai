@@ -16,10 +16,8 @@ if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
 from core.database import execute, query_all, query_one
-from core.schema import init_db
 from services.ai import ask_gemini
 
-init_db()
 st.title("💪 Corpo")
 st.caption("Treino progressivo com carga, histórico e cronômetro interativo.")
 

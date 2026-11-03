@@ -9,10 +9,8 @@ if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
 from core.database import execute, query_one
-from core.schema import init_db
 import streamlit.components.v1 as components
 
-init_db()
 st.title("🛡️ Disciplina & Domínio")
 st.caption("O contrário do vício não é a abstinência, é o domínio de si.")
 

@@ -7,10 +7,8 @@ _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
-from core.schema import init_db
 from services.ai import ask_gemini
 
-init_db()
 st.title("🏛️ Filosofia & Sabedoria")
 
 tab_video, tab_debate = st.tabs(["🎬 Aula em Vídeo", "🧠 Debate Socrático"])

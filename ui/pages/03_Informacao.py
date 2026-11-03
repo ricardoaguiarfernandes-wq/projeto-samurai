@@ -13,11 +13,9 @@ _p = Path(__file__).resolve().parents[2]
 if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
-from core.schema import init_db
 from core.database import query_all, execute
 from services.ai import ask_gemini
 
-init_db()
 
 st.title("📰 Informação & Notícias")
 tab_financas, tab_newsletter = st.tabs(["📈 Finanças & Notícias Diárias", "⚡ The Samurai Brief"])

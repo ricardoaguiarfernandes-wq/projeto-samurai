@@ -1,16 +1,17 @@
 """
-criar_projeto_samurai.py — V8.4 (Otimização Extrema e Correções)
+criar_projeto_samurai.py — V8.5 (Otimização Extrema de Latência)
 
 ENTREGAS:
-1. FIX (app.py): Adiciona @st.cache_resource no init_db() para não consultar o Supabase a cada clique.
-2. FIX (00_Home.py): Corrige o erro do pandas (.dt) e adiciona cache no heatmap.
-3. FIX (14_Carreira.py & 15_Financas.py): Fallback para criar tabelas flashcards e budgets no Supabase.
+1. FIX: Remove init_db() de TODAS as páginas (ui/pages/*.py). Ele só deve rodar no app.py.
+2. PERF (core/database.py): Aplica st.cache_resource no pool de conexões do Supabase.
+3. PERF (app.py): Garante que o init_db() rode apenas 1x por sessão.
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,14 +31,79 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. OTIMIZAÇÃO GLOBAL (app.py)
+# 1. REMOVER init_db() DAS PÁGINAS
+# ============================================================
+def fix_pages_init_db() -> None:
+    print("🔍 Removendo init_db() das páginas para evitar lentidão...")
+    pages_dir = BASE / "ui" / "pages"
+    
+    for p in pages_dir.glob("*.py"):
+        txt = read(p)
+        alterou = False
+        
+        # Remove a chamada direta
+        if re.search(r"^init_db\(\)\n", txt, re.MULTILINE):
+            txt = re.sub(r"^init_db\(\)\n", "", txt, flags=re.MULTILINE)
+            alterou = True
+            
+        # Remove o import do init_db se ele não for mais usado
+        if "from core.schema import init_db" in txt:
+            # Checa se init_db ainda é chamado no arquivo
+            if not re.search(r"init_db\(", txt):
+                txt = txt.replace("from core.schema import init_db\n", "")
+                alterou = True
+                
+        if alterou:
+            write_validated(p, txt)
+
+# ============================================================
+# 2. OTIMIZAR POOL DE CONEXÃO (core/database.py)
+# ============================================================
+def fix_database_pool_cache() -> None:
+    p = BASE / "core" / "database.py"
+    txt = read(p)
+
+    if "@st.cache_resource" in txt:
+        print("[SKIP] database.py — pool já está em cache.")
+        return
+
+    old_pool = '''def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None and HAS_PG:
+        db_url = get_db_url()
+        if db_url:
+            try:
+                _pg_pool = pool.ThreadedConnectionPool(1, 20, db_url)
+            except Exception as e:
+                print(f"Erro ao criar pool: {e}")
+    return _pg_pool'''
+
+    new_pool = '''# OTIMIZAÇÃO: Mantém o pool de conexões vivo entre os cliques (evita reconectar ao Supabase toda hora)
+@st.cache_resource
+def get_pg_pool():
+    db_url = get_db_url()
+    if db_url and HAS_PG:
+        try:
+            return pool.ThreadedConnectionPool(1, 20, db_url)
+        except Exception as e:
+            print(f"Erro ao criar pool: {e}")
+    return None'''
+
+    if old_pool in txt:
+        txt = txt.replace(old_pool, new_pool, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] database.py — bloco do pool não encontrado.")
+
+# ============================================================
+# 3. GARANTIR CACHE NO APP.PY
 # ============================================================
 def fix_app_cache() -> None:
     p = BASE / "app.py"
     txt = read(p)
 
-    if "@st.cache_resource" in txt:
-        print("[SKIP] app.py — cache já aplicado.")
+    if "@st.cache_resource\ndef setup_database():" in txt:
+        print("[SKIP] app.py — setup_database já está em cache.")
         return
 
     old_init = '''from core.schema import init_db
@@ -61,80 +127,13 @@ setup_database()'''
     else:
         print("[AVISO] app.py — bloco init_db não encontrado.")
 
-# ============================================================
-# 2. FIX HEATMAP (00_Home.py)
-# ============================================================
-def fix_heatmap_datetime() -> None:
-    p = BASE / "ui" / "pages" / "00_Home.py"
-    txt = read(p)
-
-    if 'df_heatmap["data"] = pd.to_datetime(df_heatmap["data"])' in txt:
-        print("[SKIP] 00_Home.py — fix datetime já aplicado.")
-        return
-
-    old_df = '''df_heatmap = pd.DataFrame(dias)
-df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week'''
-
-    new_df = '''df_heatmap = pd.DataFrame(dias)
-# FIX: Força a conversão para datetime antes de usar .dt
-df_heatmap["data"] = pd.to_datetime(df_heatmap["data"])
-df_heatmap["semana"] = df_heatmap["data"].dt.isocalendar().week'''
-
-    if old_df in txt:
-        txt = txt.replace(old_df, new_df, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] 00_Home.py — bloco df_heatmap não encontrado.")
-
-# ============================================================
-# 3. FALLBACK FLASHCARDS (14_Carreira.py)
-# ============================================================
-def fix_fallback_flashcards() -> None:
-    p = BASE / "ui" / "pages" / "14_Carreira.py"
-    txt = read(p)
-
-    old_query = '    pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))'
-    
-    new_query = '''    try:
-        pendentes = query_all("SELECT question FROM flashcards WHERE next_review <= ? AND last_asked = 0", (date.today().isoformat(),))
-    except Exception:
-        execute("CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL, interval_days INTEGER DEFAULT 1, ease_factor REAL DEFAULT 2.5, last_asked INTEGER DEFAULT 0)")
-        pendentes = []'''
-
-    if old_query in txt:
-        txt = txt.replace(old_query, new_query, 1)
-        write_validated(p, txt)
-    else:
-        print("[SKIP] 14_Carreira.py — fallback ou query já alterados.")
-
-# ============================================================
-# 4. FALLBACK BUDGETS (15_Financas.py)
-# ============================================================
-def fix_fallback_budgets() -> None:
-    p = BASE / "ui" / "pages" / "15_Financas.py"
-    txt = read(p)
-
-    old_query = 'budgets = query_all("SELECT * FROM budgets")'
-    
-    new_query = '''try:
-    budgets = query_all("SELECT * FROM budgets")
-except Exception:
-    execute("CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL)")
-    budgets = []'''
-
-    if old_query in txt:
-        txt = txt.replace(old_query, new_query, 1)
-        write_validated(p, txt)
-    else:
-        print("[SKIP] 15_Financas.py — fallback ou query já alterados.")
-
 def sync_git() -> None:
     print("\n" + "=" * 60)
     print("SINCRONIZANDO COM O GITHUB")
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "perf: otimiza init_db com cache, corrige heatmap datetime e adiciona fallbacks"])
+    _git_run_safe(["commit", "-m", "perf: otimizacao extrema de latencia (remove init_db redundante e cacheia pool)"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -144,22 +143,22 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V8.4 — OTIMIZAÇÃO E CORREÇÕES CRÍTICAS")
+    print("V8.5 — OTIMIZAÇÃO EXTREMA DE LATÊNCIA")
     print("=" * 60)
 
+    fix_pages_init_db()
+    fix_database_pool_cache()
     fix_app_cache()
-    fix_heatmap_datetime()
-    fix_fallback_flashcards()
-    fix_fallback_budgets()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que vai acontecer agora:")
-    print("1. A página vai carregar MUITO mais rápido (o cache do Streamlit vai segurar as consultas ao banco).")
-    print("2. O erro do Heatmap vai sumir e os quadradinhos vão aparecer.")
-    print("3. As abas de Carreira e Finanças não vão mais quebrar por falta das tabelas.")
+    print("\n🚨 COMO TESTAR A VELOCIDADE AGORA:")
+    print("1. Feche o terminal do Streamlit no seu PC (Ctrl+C).")
+    print("2. Rode o INICIAR.bat novamente.")
+    print("3. Navegue entre as abas. A primeira página (Home) pode demorar uns 3 segundos (para criar o cache do pool).")
+    print("4. A partir da segunda página, o carregamento deve ser quase instantâneo (menos de 1 segundo).")
 
 if __name__ == "__main__":
     aplicar()

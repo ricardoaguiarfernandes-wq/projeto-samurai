@@ -7,9 +7,7 @@ if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
 from core.database import query_all
-from core.schema import init_db
 
-init_db()
 st.title("🏆 Salão de Troféus")
 st.caption("Suas conquistas na jornada Samurai.")
 

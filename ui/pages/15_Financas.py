@@ -10,10 +10,8 @@ if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
 from core.database import execute, query_all
-from core.schema import init_db
 from services.ai import ask_gemini
 
-init_db()
 st.title("💸 Finanças & Gastos")
 st.caption("Controle de gastos capturados via Telegram e acompanhamento da meta de investimentos.")
 

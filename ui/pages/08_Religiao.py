@@ -13,7 +13,6 @@ from core.database import execute, query_all, query_one
 from core.schema import init_db, setup_biblia
 from services.ai import ask_gemini
 
-init_db()
 
 st.title("🕊️ Religião & Bíblia")
 st.caption("Seu centro de fortalecimento espiritual e aprendizado de idiomas.")

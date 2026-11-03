@@ -56,16 +56,16 @@ def get_db_url():
             pass
     return None
 
+# OTIMIZAÇÃO: Mantém o pool de conexões vivo entre os cliques (evita reconectar ao Supabase toda hora)
+@st.cache_resource
 def get_pg_pool():
-    global _pg_pool
-    if _pg_pool is None and HAS_PG:
-        db_url = get_db_url()
-        if db_url:
-            try:
-                _pg_pool = pool.ThreadedConnectionPool(1, 20, db_url)
-            except Exception as e:
-                print(f"Erro ao criar pool: {e}")
-    return _pg_pool
+    db_url = get_db_url()
+    if db_url and HAS_PG:
+        try:
+            return pool.ThreadedConnectionPool(1, 20, db_url)
+        except Exception as e:
+            print(f"Erro ao criar pool: {e}")
+    return None
 
 def is_postgres() -> bool:
     if not HAS_PG:
