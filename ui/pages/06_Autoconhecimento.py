@@ -8,7 +8,7 @@ if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
 from core.database import execute, query_all
-from services.ai import ask_gemini
+from services.ai import ask_gemini, get_embedding
 
 
 st.title("🪞 Autoconhecimento")
@@ -38,9 +38,13 @@ if submitted and texto.strip():
         prompt_ia = f"Atue como um mentor samurai sábio e empático. O usuário escreveu a seguinte reflexão sobre o prompt '{prompt_do_dia}':\n\n'{texto.strip()}'\n\nForneça uma resposta curta (máximo 2 parágrafos) validando os sentimentos dele e oferecendo uma perspectiva focada em disciplina, evolução e paz interior. Fale de forma direta e acolhedora."
         reflexao_ia = ask_gemini(prompt_ia)
         
+        # Gera o embedding para RAG Vetorial
+        embedding = get_embedding(texto.strip())
+        emb_str = f"[{','.join(map(str, embedding))}]" if embedding else None
+
         execute(
-            "INSERT INTO journal_entries (entry_date, prompt, content, ai_reflection) VALUES (?, ?, ?, ?)",
-            (date.today().isoformat(), prompt_do_dia, texto.strip(), reflexao_ia)
+            "INSERT INTO journal_entries (entry_date, prompt, content, ai_reflection, embedding) VALUES (?, ?, ?, ?, ?::vector)",
+            (date.today().isoformat(), prompt_do_dia, texto.strip(), reflexao_ia, emb_str)
         )
     st.success("Reflexão salva e analisada.")
     st.rerun()

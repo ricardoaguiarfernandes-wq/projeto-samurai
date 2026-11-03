@@ -538,6 +538,39 @@ NOTÍCIAS BRUTAS:
     return {"text": texto_final}
 
 
+
+# ============================================================
+# WEBHOOK DO WHATSAPP (Z-API / Twilio Compatível)
+# ============================================================
+class WhatsAppPayload(BaseModel):
+    message: str
+    sender: str
+
+@app.post("/webhook/whatsapp")
+async def receive_whatsapp(payload: WhatsAppPayload, background_tasks: BackgroundTasks):
+    def process_msg():
+        from services.ai import ask_gemini
+        try:
+            resposta = ask_gemini(f"Atue como o Mentor Samurai no WhatsApp. O usuário disse: '{payload.message}'. Responda de forma direta, amigável e curta.")
+            
+            # Configuração para envio de volta (depende do provedor Z-API/Twilio)
+            # Exemplo genérico para Z-API:
+            import os
+            zapi_instance = os.environ.get("ZAPI_INSTANCE", "")
+            zapi_token = os.environ.get("ZAPI_TOKEN", "")
+            
+            if zapi_instance and zapi_token:
+                requests.post(
+                    f"https://api.z-api.io/instances/{zapi_instance}/token/{zapi_token}/send-text",
+                    json={"phone": payload.sender, "message": resposta},
+                    timeout=10
+                )
+        except Exception as e:
+            print(f"Erro WhatsApp: {e}")
+
+    background_tasks.add_task(process_msg)
+    return {"status": "ok"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))

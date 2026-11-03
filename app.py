@@ -131,6 +131,13 @@ hr { border-color: var(--s-red) !important; opacity: .5 !important; }
 }
 .stAlert * { color: var(--s-white) !important; }
 
+/* PWA - ESCONDER BARRA DO STREAMLIT NO MOBILE */
+@media (max-width: 768px) {
+    header[data-testid="stHeader"] { display: none !important; }
+    #MainMenu { visibility: hidden !important; }
+    footer { visibility: hidden !important; }
+}
+
 /* MOBILE OPTIMIZATIONS */
 @media (max-width: 768px) {
     .block-container { padding: 1rem 0.5rem !important; }

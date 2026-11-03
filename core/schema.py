@@ -10,6 +10,7 @@ from core.database import execute, query_one, query_all
 def get_ddl():
     # DDL Puro PostgreSQL
     ddl_base = [
+        "CREATE EXTENSION IF NOT EXISTS vector;",
         """CREATE TABLE IF NOT EXISTS habits (id SERIAL PRIMARY KEY, name TEXT NOT NULL, pillar TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
         """CREATE TABLE IF NOT EXISTS habit_logs (id SERIAL PRIMARY KEY, habit_id INTEGER NOT NULL, log_date TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, notes TEXT, FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE, UNIQUE (habit_id, log_date));""",
         """CREATE TABLE IF NOT EXISTS daily_checkins (id SERIAL PRIMARY KEY, checkin_date TEXT NOT NULL UNIQUE, energy INTEGER NOT NULL, sleep_hours REAL NOT NULL, mood TEXT, stress INTEGER NOT NULL, notes TEXT);""",
@@ -24,7 +25,7 @@ def get_ddl():
         """CREATE TABLE IF NOT EXISTS career_missions (id SERIAL PRIMARY KEY, mission_date TEXT NOT NULL, task TEXT NOT NULL, completed INTEGER DEFAULT 0);""",
         """CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
         """CREATE TABLE IF NOT EXISTS sos_logs (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",
+        """CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT, embedding vector(768));""",
         """CREATE TABLE IF NOT EXISTS book_progress (id SERIAL PRIMARY KEY, book_title TEXT NOT NULL UNIQUE, current_page INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, notes TEXT, last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
         """CREATE TABLE IF NOT EXISTS exercise_logs (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL, exercise_name TEXT NOT NULL, reps INTEGER NOT NULL DEFAULT 0, sets INTEGER NOT NULL DEFAULT 1, notes TEXT, UNIQUE (log_date, exercise_name));""",
         """CREATE TABLE IF NOT EXISTS book_chunks (id SERIAL PRIMARY KEY, book_title TEXT NOT NULL, chunk_index INTEGER NOT NULL, text_content TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, UNIQUE (book_title, chunk_index));""",

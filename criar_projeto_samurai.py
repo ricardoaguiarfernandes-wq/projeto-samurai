@@ -1,12 +1,14 @@
 """
-criar_projeto_samurai.py — V8.6 (Blindagem Arquitetural e Limpeza)
+criar_projeto_samurai.py — V9.0 (O Patch Definitivo: RAG, Valuation, PWA e WhatsApp)
 
 ENTREGAS:
-1. FIX (app.py): Move st.set_page_config para o topo (evita crash).
-2. FIX (core/schema.py): Reescreve as tabelas em puro PostgreSQL (remove gambiarras do SQLite).
-3. FIX (03_Informacao.py): Faz o botão de notícias chamar a API do Render (remove código duplicado).
-4. FIX (api_samurai.py): Limpa comentários duplicados.
-5. FIX (14 e 15): Remove fallbacks de tabela da UI (o schema já cuida disso).
+1. DB: Ativa pgvector e adiciona a coluna 'embedding' em journal_entries.
+2. AI: Adiciona função de embeddings (text-embedding-004) no services/ai.py.
+3. UI (06_Autoconhecimento.py): Salva o embedding a cada nova reflexão.
+4. UI (04_Patrimonio.py): Adiciona o valuation (lucro/prejuízo) em tempo real.
+5. APP: Injeta o CSS para esconder o cabeçalho do Streamlit (modo PWA).
+6. API (Telegram): Altera a busca do diário para usar RAG Vetorial.
+7. API (WhatsApp): Cria a rota /webhook/whatsapp (para Z-API/Twilio).
 
 REGRA DE OURO: 'gemini-3.5-flash-lite' permanece INTOCÁVEL.
 """
@@ -33,221 +35,260 @@ def write_validated(p: Path, content: str) -> None:
     print(f"[OK] {p.relative_to(BASE)}")
 
 # ============================================================
-# 1. FIX CRÍTICO: APP.PY (set_page_config)
+# 1. DB & RAG (schema.py)
 # ============================================================
-def fix_app_pyc() -> None:
-    p = BASE / "app.py"
-    txt = read(p)
-    
-    # Extrai o bloco do set_page_config atual
-    match = re.search(r'st\.set_page_config\(.*?\)\n', txt, re.DOTALL)
-    if not match:
-        print("[AVISO] app.py — bloco set_page_config não encontrado.")
-        return
-        
-    page_config_str = match.group(0)
-    
-    # Remove de onde está agora
-    txt = txt.replace(page_config_str, "")
-    
-    # Insere no topo, logo após os imports
-    marker = "import streamlit as st\n"
-    if marker in txt:
-        txt = txt.replace(marker, marker + "\n" + page_config_str + "\n", 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] app.py — import streamlit não encontrado.")
-
-# ============================================================
-# 2. FIX SCHEMA: PURO POSTGRESQL
-# ============================================================
-def fix_schema_pg_pure() -> None:
+def fix_schema_vector() -> None:
     p = BASE / "core" / "schema.py"
     txt = read(p)
 
-    if "def get_ddl():\n    return [" in txt:
-        print("[SKIP] schema.py — já é puro Postgres.")
+    if "vector(768)" in txt:
+        print("[SKIP] schema.py — coluna embedding já existe.")
         return
 
-    new_ddl_func = '''def get_ddl():
-    # DDL Puro PostgreSQL
-    ddl_base = [
-        """CREATE TABLE IF NOT EXISTS habits (id SERIAL PRIMARY KEY, name TEXT NOT NULL, pillar TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
-        """CREATE TABLE IF NOT EXISTS habit_logs (id SERIAL PRIMARY KEY, habit_id INTEGER NOT NULL, log_date TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, notes TEXT, FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE, UNIQUE (habit_id, log_date));""",
-        """CREATE TABLE IF NOT EXISTS daily_checkins (id SERIAL PRIMARY KEY, checkin_date TEXT NOT NULL UNIQUE, energy INTEGER NOT NULL, sleep_hours REAL NOT NULL, mood TEXT, stress INTEGER NOT NULL, notes TEXT);""",
-        """CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, expense_date TEXT NOT NULL, description TEXT NOT NULL, amount REAL NOT NULL, category TEXT, notes TEXT);""",
-        """CREATE TABLE IF NOT EXISTS patrimony_fixed_income (id SERIAL PRIMARY KEY, name TEXT, amount REAL, rate TEXT);""",
-        """CREATE TABLE IF NOT EXISTS daily_briefs (id SERIAL PRIMARY KEY, brief_date TEXT NOT NULL UNIQUE, content TEXT NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS body_metrics (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL UNIQUE, weight REAL NOT NULL, body_fat REAL, notes TEXT);""",
-        """CREATE TABLE IF NOT EXISTS user_stats (id INTEGER PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1);""",
-        """CREATE TABLE IF NOT EXISTS achievements (id TEXT PRIMARY KEY, earned_at TEXT NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS user_settings (id INTEGER PRIMARY KEY, workout_split TEXT, workout_start_date TEXT);""",
-        """CREATE TABLE IF NOT EXISTS discipline (id INTEGER PRIMARY KEY, start_date TEXT, longest_streak INTEGER DEFAULT 0);""",
-        """CREATE TABLE IF NOT EXISTS career_missions (id SERIAL PRIMARY KEY, mission_date TEXT NOT NULL, task TEXT NOT NULL, completed INTEGER DEFAULT 0);""",
-        """CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
-        """CREATE TABLE IF NOT EXISTS sos_logs (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",
-        """CREATE TABLE IF NOT EXISTS book_progress (id SERIAL PRIMARY KEY, book_title TEXT NOT NULL UNIQUE, current_page INTEGER NOT NULL DEFAULT 0, total_pages INTEGER NOT NULL DEFAULT 0, notes TEXT, last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
-        """CREATE TABLE IF NOT EXISTS exercise_logs (id SERIAL PRIMARY KEY, log_date TEXT NOT NULL, exercise_name TEXT NOT NULL, reps INTEGER NOT NULL DEFAULT 0, sets INTEGER NOT NULL DEFAULT 1, notes TEXT, UNIQUE (log_date, exercise_name));""",
-        """CREATE TABLE IF NOT EXISTS book_chunks (id SERIAL PRIMARY KEY, book_title TEXT NOT NULL, chunk_index INTEGER NOT NULL, text_content TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, UNIQUE (book_title, chunk_index));""",
-        """CREATE TABLE IF NOT EXISTS bible_verses (id SERIAL PRIMARY KEY, book_name TEXT NOT NULL, book_abbrev TEXT, chapter INTEGER NOT NULL, verse INTEGER NOT NULL, text TEXT NOT NULL, word_count INTEGER NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS reading_plan (day INTEGER PRIMARY KEY, start_verse_id INTEGER, end_verse_id INTEGER);""",
-        """CREATE TABLE IF NOT EXISTS reading_progress (day INTEGER PRIMARY KEY, completed INTEGER DEFAULT 0);""",
-        """CREATE TABLE IF NOT EXISTS newsletters_inbox (id SERIAL PRIMARY KEY, subject TEXT NOT NULL, sender TEXT NOT NULL, content TEXT NOT NULL, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",
-        """CREATE TABLE IF NOT EXISTS portfolio (id SERIAL PRIMARY KEY, ticker TEXT NOT NULL UNIQUE, quantity INTEGER NOT NULL, average_price REAL NOT NULL);""",
-        """CREATE TABLE IF NOT EXISTS flashcards (id SERIAL PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, next_review TEXT NOT NULL, interval_days INTEGER DEFAULT 1, ease_factor REAL DEFAULT 2.5, last_asked INTEGER DEFAULT 0);""",
-        """CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL);""",
-        "CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(log_date);",
-        "CREATE INDEX IF NOT EXISTS idx_checkins_date ON daily_checkins(checkin_date);",
-        "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);",
-    ]
-    return ddl_base'''
+    # Adiciona a extensão pgvector e a coluna de embedding
+    if "CREATE EXTENSION IF NOT EXISTS vector;" not in txt:
+        old_ddl = '"""CREATE TABLE IF NOT EXISTS habits (id SERIAL PRIMARY KEY, name TEXT NOT NULL, pillar TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP);""",'
+        new_ddl = '"CREATE EXTENSION IF NOT EXISTS vector;",\n        ' + old_ddl
+        txt = txt.replace(old_ddl, new_ddl, 1)
 
-    pattern = re.compile(r'def get_ddl\(\):.*?return ddl_base', re.DOTALL)
-    if pattern.search(txt):
-        txt = pattern.sub(new_ddl_func, txt, count=1)
+    old_journal = '"""CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT);""",'
+    new_journal = '"""CREATE TABLE IF NOT EXISTS journal_entries (id SERIAL PRIMARY KEY, entry_date TEXT NOT NULL, prompt TEXT, content TEXT NOT NULL, ai_reflection TEXT, embedding vector(768));""",'
+    
+    if old_journal in txt:
+        txt = txt.replace(old_journal, new_journal, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] schema.py — função get_ddl não encontrada.")
+        print("[AVISO] schema.py — tabela journal_entries não encontrada.")
 
 # ============================================================
-# 3. FIX INFORMAÇÃO: CHAMAR API EM VEZ DE DUPLICAR CÓDIGO
+# 2. AI SERVICE (services/ai.py)
 # ============================================================
-def fix_informacao_api_call() -> None:
-    p = BASE / "ui" / "pages" / "03_Informacao.py"
+def fix_ai_embeddings() -> None:
+    p = BASE / "services" / "ai.py"
     txt = read(p)
 
-    if "samurai-webhook.onrender.com/api/daily-news" in txt:
-        print("[SKIP] 03_Informacao.py — já usa a API.")
+    if "get_embedding" in txt:
+        print("[SKIP] ai.py — função de embedding já existe.")
         return
 
-    old_block = '''    if st.button("🧠 Gerar Resumo de Notícias", use_container_width=True):
-        with st.spinner("Lendo Câmara, Senado, ALERJ e Macaé..."):
-            # Simulando a chamada da API local (no Render) - vamos chamar direto a função
-            try:
-                # No app local não tem como chamar a API protegida, então vamos ler direto
-                import feedparser
-                from bs4 import BeautifulSoup
-                noticias = []
-                
-                f1 = feedparser.parse("https://www.camara.leg.br/noticias/rss/ultimas-noticias")
-                for e in f1.entries[:2]: noticias.append(f"[Câmara] {e.title}")
-                f2 = feedparser.parse("https://www12.senado.leg.br/noticias/RSS")
-                for e in f2.entries[:2]: noticias.append(f"[Senado] {e.title}")
-                f3 = feedparser.parse("https://news.google.com/rss/search?q=alerj+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
-                for e in f3.entries[:2]: noticias.append(f"[ALERJ] {e.title}")
-                f4 = feedparser.parse("https://news.google.com/rss/search?q=camara+macae+noticias&hl=pt-BR&gl=BR&ceid=BR:pt-419")
-                for e in f4.entries[:2]: noticias.append(f"[Macaé] {e.title}")
-                
-                prompt = f"Resuma as notícias a seguir em tópicos e explique o impacto prático:\n" + "\n".join(noticias)
-                resumo = ask_gemini(prompt)
-                st.markdown(f'<div class="samurai-card" style="border-left-color: #8B0000;"><div style="white-space: pre-wrap;">{resumo}</div></div>', unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Erro ao carregar notícias: {e}")'''
+    func_embedding = '''
+def get_embedding(text: str) -> list[float]:
+    """Gera o embedding (vetor) de um texto para busca semântica (RAG)."""
+    api_key = get_api_key()
+    if not api_key or api_key == "COLE_SUA_CHAVE_AQUI":
+        return []
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.embed_content(
+            model='text-embedding-004',
+            contents=text
+        )
+        return response.embeddings[0].values
+    except Exception as e:
+        print(f"Erro ao gerar embedding: {e}")
+        return []
+'''
+    txt += func_embedding
+    write_validated(p, txt)
 
-    new_block = '''    if st.button("🧠 Gerar Resumo de Notícias", use_container_width=True):
-        with st.spinner("Buscando notícias na API do Samurai..."):
-            try:
-                import os
-                api_token = ""
-                try:
-                    if "SAMURAI_API_TOKEN" in st.secrets:
-                        api_token = st.secrets["SAMURAI_API_TOKEN"]
-                except Exception:
-                    pass
-                
-                if not api_token:
-                    api_token = os.environ.get("SAMURAI_API_TOKEN", "")
-                    
-                if not api_token:
-                    st.warning("Token da API não configurado. Usando fallback local.")
-                    raise Exception("Sem token")
-                    
-                headers = {"Authorization": f"Bearer {api_token}"}
-                r = requests.get("https://samurai-webhook.onrender.com/api/daily-news", headers=headers, timeout=30)
-                r.raise_for_status()
-                data = r.json()
-                st.markdown(f'<div class="samurai-card" style="border-left-color: #8B0000;"><div style="white-space: pre-wrap;">{data.get("text", "Sem notícias.")}</div></div>', unsafe_allow_html=True)
-                
-            except Exception as e:
-                st.error(f"Erro ao conectar com o servidor. Detalhes: {e}")'''
+# ============================================================
+# 3. UI AUTOCONHECIMENTO (Salvar Embedding)
+# ============================================================
+def fix_ui_journal_embedding() -> None:
+    p = BASE / "ui" / "pages" / "06_Autoconhecimento.py"
+    txt = read(p)
 
-    if old_block in txt:
-        txt = txt.replace(old_block, new_block, 1)
+    if "embedding = get_embedding" in txt:
+        print("[SKIP] 06_Autoconhecimento.py — embedding já salvo.")
+        return
+
+    if "from services.ai import ask_gemini" in txt and "get_embedding" not in txt:
+        txt = txt.replace("from services.ai import ask_gemini", "from services.ai import ask_gemini, get_embedding")
+
+    old_save = '''        execute(
+            "INSERT INTO journal_entries (entry_date, prompt, content, ai_reflection) VALUES (?, ?, ?, ?)",
+            (date.today().isoformat(), prompt_do_dia, texto.strip(), reflexao_ia)
+        )'''
+
+    new_save = '''        # Gera o embedding para RAG Vetorial
+        embedding = get_embedding(texto.strip())
+        emb_str = f"[{','.join(map(str, embedding))}]" if embedding else None
+
+        execute(
+            "INSERT INTO journal_entries (entry_date, prompt, content, ai_reflection, embedding) VALUES (?, ?, ?, ?, ?::vector)",
+            (date.today().isoformat(), prompt_do_dia, texto.strip(), reflexao_ia, emb_str)
+        )'''
+
+    if old_save in txt:
+        txt = txt.replace(old_save, new_save, 1)
         write_validated(p, txt)
     else:
-        print("[AVISO] 03_Informacao.py — bloco de notícias antigo não encontrado.")
+        print("[AVISO] 06_Autoconhecimento.py — bloco de insert do journal não encontrado.")
 
 # ============================================================
-# 4. FIX API: REMOVER COMENTÁRIOS DUPLICADOS
+# 4. UI PATRIMÔNIO (Valuation em Tempo Real)
 # ============================================================
-def fix_api_duplicate_comments() -> None:
+def fix_ui_patrimonio_valuation() -> None:
+    p = BASE / "ui" / "pages" / "04_Patrimonio.py"
+    txt = read(p)
+
+    if "Lucro/Prejuízo" in txt:
+        print("[SKIP] 04_Patrimonio.py — valuation já existe.")
+        return
+
+    old_card = '''    for a in carteira:
+        st.markdown(f'<div class="samurai-card" style="padding: 10px;"><b>{a["ticker"]}</b> - {a["quantity"]} cotas @ R$ {a["average_price"]:.2f}</div>', unsafe_allow_html=True)'''
+
+    new_card = '''    import yfinance as yf
+    
+    for a in carteira:
+        ticker = a['ticker']
+        ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
+        
+        try:
+            data = yf.Ticker(ticker_busca).history(period="1d")
+            preco_atual = float(data['Close'].iloc[-1]) if not data.empty else a['average_price']
+        except Exception:
+            preco_atual = a['average_price']
+            
+        valor_investido = a['quantity'] * a['average_price']
+        valor_atual = a['quantity'] * preco_atual
+        lucro = valor_atual - valor_investido
+        lucro_pct = (lucro / valor_investido) * 100 if valor_investido > 0 else 0
+        
+        cor = "#4CAF50" if lucro >= 0 else "#F44336"
+        sinal = "+" if lucro >= 0 else ""
+        
+        st.markdown(f"""
+        <div class="samurai-card" style="padding: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <b>{ticker}</b><br>
+                <span style="font-size: 0.8rem; color: #CCC;">{a['quantity']} cotas @ R$ {a['average_price']:.2f}</span>
+            </div>
+            <div style="text-align: right;">
+                <span style="font-size: 1.1rem; font-weight: bold;">R$ {valor_atual:.2f}</span><br>
+                <span style="font-size: 0.85rem; color: {cor};">{sinal}R$ {lucro:.2f} ({sinal}{lucro_pct:.1f}%)</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)'''
+
+    if old_card in txt:
+        txt = txt.replace(old_card, new_card, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] 04_Patrimonio.py — bloco do card de ação não encontrado.")
+
+# ============================================================
+# 5. APP.PY (CSS PWA e Esconder Header)
+# ============================================================
+def fix_app_pwa_css() -> None:
+    p = BASE / "app.py"
+    txt = read(p)
+
+    if "header[data-testid=\"stHeader\"]" in txt:
+        print("[SKIP] app.py — CSS do PWA já aplicado.")
+        return
+
+    old_css = '''/* MOBILE OPTIMIZATIONS */
+@media (max-width: 768px) {'''
+
+    new_css = '''/* PWA - ESCONDER BARRA DO STREAMLIT NO MOBILE */
+@media (max-width: 768px) {
+    header[data-testid="stHeader"] { display: none !important; }
+    #MainMenu { visibility: hidden !important; }
+    footer { visibility: hidden !important; }
+}
+
+/* MOBILE OPTIMIZATIONS */
+@media (max-width: 768px) {'''
+
+    if old_css in txt:
+        txt = txt.replace(old_css, new_css, 1)
+        write_validated(p, txt)
+    else:
+        print("[AVISO] app.py — bloco CSS mobile não encontrado.")
+
+# ============================================================
+# 6. API (RAG no Telegram + Webhook WhatsApp)
+# ============================================================
+def fix_api_rag_and_whatsapp() -> None:
     p = BASE / "api_samurai.py"
     txt = read(p)
 
-    old_blocks = '''# ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Câmara, Senado, ALERJ, Macaé)
-# ============================================================
-
-# ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS
-# ============================================================
-
-# ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS
-# ============================================================
-
-# ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Com Resumo IA)
-# ============================================================
-
-# ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Com Resumo IA)
-# ============================================================'''
-
-    new_block = '''# ============================================================
-# NOTÍCIAS LEGISLATIVAS DIÁRIAS (Com Resumo IA)
-# ============================================================'''
-
-    if old_blocks in txt:
-        txt = txt.replace(old_blocks, new_block, 1)
-        write_validated(p, txt)
-    else:
-        print("[AVISO] api_samurai.py — múltiplos comentários não encontrados ou já limpos.")
-
-# ============================================================
-# 5. REMOVER FALLBACKS FEIOS DA UI
-# ============================================================
-def fix_ui_fallbacks() -> None:
-    # 14_Carreira
-    p1 = BASE / "ui" / "pages" / "14_Carreira.py"
-    txt1 = read(p1)
-    old_c = '''    try:
-        manuais = query_all("SELECT id, title, uploaded_at FROM manuals ORDER BY uploaded_at DESC")
-    except Exception:
-        from core.database import is_postgres
-        if is_postgres():
-            execute("CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    # 6.1 - Atualizar o Telegram para usar RAG
+    if "ORDER BY embedding <-> %s::vector" not in txt:
+        old_ctx = '''        entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY entry_date DESC LIMIT 20")
+        
+        ctx = ""
+        if entries:
+            ctx = "\\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries])
         else:
-            execute("CREATE TABLE IF NOT EXISTS manuals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, content TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')))")
-        manuais = []'''
-    new_c = '''    manuais = query_all("SELECT id, title, uploaded_at FROM manuals ORDER BY uploaded_at DESC")'''
-    if old_c in txt1:
-        txt1 = txt1.replace(old_c, new_c, 1)
-        write_validated(p1, txt1)
+            ctx = "(Nenhum registro no diário ainda)"'''
 
-    # 15_Financas
-    p2 = BASE / "ui" / "pages" / "15_Financas.py"
-    txt2 = read(p2)
-    old_f = '''try:
-    budgets = query_all("SELECT * FROM budgets")
-except Exception:
-    execute("CREATE TABLE IF NOT EXISTS budgets (category TEXT PRIMARY KEY, limit_amount REAL NOT NULL)")
-    budgets = []'''
-    new_f = '''budgets = query_all("SELECT * FROM budgets")'''
-    if old_f in txt2:
-        txt2 = txt2.replace(old_f, new_f, 1)
-        write_validated(p2, txt2)
+        new_ctx = '''        from services.ai import get_embedding
+        query_emb = get_embedding(text)
+        
+        ctx = ""
+        if query_emb:
+            emb_str = f"[{','.join(map(str, query_emb))}]"
+            try:
+                # Busca semântica usando a extensão pgvector
+                entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY embedding <-> %s::vector LIMIT 5", (emb_str,))
+                if entries:
+                    ctx = "\\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries])
+            except Exception as e:
+                print(f"Erro no RAG (usando fallback): {e}")
+                
+        if not ctx:
+            # Fallback se não tiver embedding
+            entries = query_all("SELECT entry_date, content FROM journal_entries ORDER BY entry_date DESC LIMIT 5")
+            ctx = "\\n".join([f"[{e['entry_date']}] {e['content']}" for e in entries]) if entries else "(Nenhum registro no diário ainda)"'''
+
+        if old_ctx in txt:
+            txt = txt.replace(old_ctx, new_ctx, 1)
+
+    # 6.2 - Adicionar rota do WhatsApp
+    if "/webhook/whatsapp" not in txt:
+        whatsapp_route = '''
+# ============================================================
+# WEBHOOK DO WHATSAPP (Z-API / Twilio Compatível)
+# ============================================================
+class WhatsAppPayload(BaseModel):
+    message: str
+    sender: str
+
+@app.post("/webhook/whatsapp")
+async def receive_whatsapp(payload: WhatsAppPayload, background_tasks: BackgroundTasks):
+    def process_msg():
+        from services.ai import ask_gemini
+        try:
+            resposta = ask_gemini(f"Atue como o Mentor Samurai no WhatsApp. O usuário disse: '{payload.message}'. Responda de forma direta, amigável e curta.")
+            
+            # Configuração para envio de volta (depende do provedor Z-API/Twilio)
+            # Exemplo genérico para Z-API:
+            import os
+            zapi_instance = os.environ.get("ZAPI_INSTANCE", "")
+            zapi_token = os.environ.get("ZAPI_TOKEN", "")
+            
+            if zapi_instance and zapi_token:
+                requests.post(
+                    f"https://api.z-api.io/instances/{zapi_instance}/token/{zapi_token}/send-text",
+                    json={"phone": payload.sender, "message": resposta},
+                    timeout=10
+                )
+        except Exception as e:
+            print(f"Erro WhatsApp: {e}")
+
+    background_tasks.add_task(process_msg)
+    return {"status": "ok"}
+
+'''
+        marker = 'if __name__ == "__main__":'
+        if marker in txt:
+            txt = txt.replace(marker, whatsapp_route + marker, 1)
+
+    write_validated(p, txt)
 
 def sync_git() -> None:
     print("\n" + "=" * 60)
@@ -255,7 +296,7 @@ def sync_git() -> None:
     print("=" * 60)
 
     _git_run_safe(["add", "-A"])
-    _git_run_safe(["commit", "-m", "refactor: limpeza arquitetural, ddl puro postgres e fix set_page_config"])
+    _git_run_safe(["commit", "-m", "feat: rag vetorial, valuation tempo real, pwa mobile e whatsapp webhook"])
     
     r = _git_run_safe(["push", "origin", "main"])
     if r.returncode == 0:
@@ -265,23 +306,26 @@ def sync_git() -> None:
 
 def aplicar() -> None:
     print("=" * 60)
-    print("V8.6 — BLINDAGEM ARQUITETURAL")
+    print("V9.0 — PATCH DEFINITIVO (RAG, PWA, VALUATION E WHATSAPP)")
     print("=" * 60)
 
-    fix_app_pyc()
-    fix_schema_pg_pure()
-    fix_informacao_api_call()
-    fix_api_duplicate_comments()
-    fix_ui_fallbacks()
+    fix_schema_vector()
+    fix_ai_embeddings()
+    fix_ui_journal_embedding()
+    fix_ui_patrimonio_valuation()
+    fix_app_pwa_css()
+    fix_api_rag_and_whatsapp()
     sync_git()
 
     print("\n" + "=" * 60)
     print("✅ CONCLUÍDO COM SUCESSO")
     print("=" * 60)
-    print("\nO que vai acontecer agora:")
-    print("1. O app não vai mais travar no boot (set_page_config corrigido).")
-    print("2. O banco não fará mais conversões e usará o puro PostgreSQL.")
-    print("3. O botão de notícias usará o servidor do Render (economizando processamento).")
+    print("\nO que você acabou de instalar:")
+    print("1. 💸 Valuation: Vá em Patrimônio para ver o lucro/prejuízo em tempo real.")
+    print("2. 📱 PWA: Abra o app no celular. A barra do Streamlit sumiu (parece um app nativo).")
+    print("3. 🧠 RAG: Quando enviar uma nova reflexão no Diário, ela será vetorizada.")
+    print("   No Telegram, pergunte algo antigo (ex: 'o que eu decidi em julho?'). A IA vai buscar por similaridade.")
+    print("4. 🟢 WhatsApp: A rota /webhook/whatsapp está pronta. Configure a Z-API no Render para ativar.")
 
 if __name__ == "__main__":
     aplicar()

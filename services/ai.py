@@ -66,3 +66,20 @@ def ask_gemini_vision(image_bytes: bytes, prompt: str) -> str:
         return _extrair_texto(response)
     except Exception as e:
         return f"⚠️ Erro na IA (Visão): {str(e)}"
+
+def get_embedding(text: str) -> list[float]:
+    """Gera o embedding (vetor) de um texto para busca semântica (RAG)."""
+    api_key = get_api_key()
+    if not api_key or api_key == "COLE_SUA_CHAVE_AQUI":
+        return []
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.embed_content(
+            model='text-embedding-004',
+            contents=text
+        )
+        return response.embeddings[0].values
+    except Exception as e:
+        print(f"Erro ao gerar embedding: {e}")
+        return []

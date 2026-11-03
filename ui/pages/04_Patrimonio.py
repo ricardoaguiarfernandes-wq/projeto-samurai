@@ -101,8 +101,38 @@ with tab_acoes:
             if st.form_submit_button("Salvar"):
                 execute("INSERT INTO portfolio (ticker, quantity, average_price) VALUES (?, ?, ?) ON CONFLICT(ticker) DO UPDATE SET quantity=excluded.quantity, average_price=excluded.average_price", (t, q, p))
                 st.rerun()
+    import yfinance as yf
+    
     for a in carteira:
-        st.markdown(f'<div class="samurai-card" style="padding: 10px;"><b>{a["ticker"]}</b> - {a["quantity"]} cotas @ R$ {a["average_price"]:.2f}</div>', unsafe_allow_html=True)
+        ticker = a['ticker']
+        ticker_busca = ticker if ".SA" in ticker else f"{ticker}.SA"
+        
+        try:
+            data = yf.Ticker(ticker_busca).history(period="1d")
+            preco_atual = float(data['Close'].iloc[-1]) if not data.empty else a['average_price']
+        except Exception:
+            preco_atual = a['average_price']
+            
+        valor_investido = a['quantity'] * a['average_price']
+        valor_atual = a['quantity'] * preco_atual
+        lucro = valor_atual - valor_investido
+        lucro_pct = (lucro / valor_investido) * 100 if valor_investido > 0 else 0
+        
+        cor = "#4CAF50" if lucro >= 0 else "#F44336"
+        sinal = "+" if lucro >= 0 else ""
+        
+        st.markdown(f"""
+        <div class="samurai-card" style="padding: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <b>{ticker}</b><br>
+                <span style="font-size: 0.8rem; color: #CCC;">{a['quantity']} cotas @ R$ {a['average_price']:.2f}</span>
+            </div>
+            <div style="text-align: right;">
+                <span style="font-size: 1.1rem; font-weight: bold;">R$ {valor_atual:.2f}</span><br>
+                <span style="font-size: 0.85rem; color: {cor};">{sinal}R$ {lucro:.2f} ({sinal}{lucro_pct:.1f}%)</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 with tab_rf:
     st.subheader("Adicionar Renda Fixa")
